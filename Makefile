@@ -12,3 +12,10 @@ all: clean build
 
 run:
 	./process_generator.out
+
+kill:
+	killall -e clk.out
+	killall -e scheduler.out
+	killall -e process_generator.out
+	killall -e process.out
+	killall -e make

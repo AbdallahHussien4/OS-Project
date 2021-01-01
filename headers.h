@@ -10,10 +10,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <string.h>
 
 typedef short bool;
 #define true 1
-#define false 1
+#define false 0
 
 #define SHKEY 300
 
@@ -23,31 +24,28 @@ typedef short bool;
 int * shmaddr;                 //
 //===============================
 
-// buffer used to send processes data between process generator and schedular
+// buffer used to send processes data between process generator and scheduler
 struct msgbuffer
 {
-    long mtype;
-    long ArrivalTime;
-    long RunTime;
-    long Priority;
-    long Id;
+    int mtype;
+    int ArrivalTime;
+    int RunTime;
+    int Priority;
+    int Id;
 };
 
 struct process
 {
-    long ArrivalTime;
-    long RunTime;
-    long Priority;
-    long Id;
-    long WaitingTime;
-    long RemainingTime;
+    bool forked;
+    int lastTime;
+    int ArrivalTime;
+    int RunTime;
+    int Priority;
+    int Id;
+    int WaitingTime;
+    int RemainingTime;
     struct process* next; 
 };
-
-// typedef struct Node{
-//     struct process P;
-//     struct Node * Node;
-// };
 
 int getClk()
 {
@@ -123,11 +121,11 @@ void printQueue(Queue * q){
     struct process* start = (q->head); 
     if(start == NULL)
     {
-        printf("Empty Queue");
+        printf("Empty Queue\n");
         return;
     }
     while(start){
-        printf("%ld\n", start->Priority);
+        printf("%d\n", start->Priority);
         start = start->next;
     }
     printf("=============\n");
@@ -135,27 +133,18 @@ void printQueue(Queue * q){
 };
 
 
-
-// Removes the element with the 
-// highest priority form the list 
 struct process * pop(Queue * q) 
 { 
-    struct process* temp = q->head; 
-    (q->head) = (q->head)->next; 
+    struct process * temp = q->head; 
+    q->head = q->head->next; 
     return temp; 
 } 
 
-// Function to push according to priority 
 void push(Queue * q, struct process * p, int Algorithm) 
 { 
     struct process* start = (q->head); 
-  
-    // Create new Node 
     struct process* temp = newNode(p); 
-  
-    // Special Case: The head of list has lesser 
-    // priority than new node. So insert new 
-    // node before head node and change head node. 
+
     if((q->head) == NULL)
     {
         q->head = temp;
@@ -163,60 +152,46 @@ void push(Queue * q, struct process * p, int Algorithm)
     }
     switch (Algorithm)
     {
-    case 1:
-        if ((q->head)->Priority > p->Priority) 
-        { 
-            // Insert New Node before head 
-            temp->next = q->head; 
-            (q->head) = temp; 
-        } 
-        else
-        { 
-            // Traverse the list and find a 
-            // position to insert new node 
-            while (start->next != NULL && start->next->Priority < p->Priority)
+        case 1:
+            if ((q->head)->Priority > p->Priority) 
+            { 
+                temp->next = q->head; 
+                (q->head) = temp; 
+            } 
+            else
+            { 
+                while (start->next != NULL && start->next->Priority < p->Priority)
+                { 
+                    start = start->next; 
+                } 
+        
+                temp->next = start->next; 
+                start->next = temp; 
+            }
+            break;
+        case 2:
+            if ((q->head)->RemainingTime > p->RemainingTime) 
+            { 
+                temp->next = q->head; 
+                (q->head) = temp; 
+            } 
+            else
+            { 
+                while (start->next != NULL && start->next->RemainingTime < p->RemainingTime)
+                { 
+                    start = start->next; 
+                } 
+                temp->next = start->next; 
+                start->next = temp; 
+            }
+            break;
+        default:
+            while (start->next != NULL)
             { 
                 start = start->next; 
             } 
-    
-            // Either at the ends of the list 
-            // or at required position 
             temp->next = start->next; 
             start->next = temp; 
-        }
-        break;
-    case 2:
-        if ((q->head)->RemainingTime > p->RemainingTime) 
-        { 
-            // Insert New Node before head 
-            temp->next = q->head; 
-            (q->head) = temp; 
-        } 
-        else
-        { 
-            // Traverse the list and find a 
-            // position to insert new node 
-            while (start->next != NULL && start->next->RemainingTime < p->RemainingTime)
-            { 
-                start = start->next; 
-            } 
-    
-            // Either at the ends of the list 
-            // or at required position 
-            temp->next = start->next; 
-            start->next = temp; 
-        }
-        break;
-    default:
-        while (start->next != NULL)
-        { 
-            start = start->next; 
-        } 
-
-        // Either at the ends of the list 
-        // or at required position 
-        temp->next = start->next; 
-        start->next = temp; 
-        break;        
+            break;        
     } 
 } 

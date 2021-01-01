@@ -77,8 +77,10 @@ int main(int argc, char * argv[])
 
     int Iterator=0;
     long CurrentClk=-1;
+    bool flag;
     while(Iterator<p_num)
     {
+        flag = false;
         // To get time use this
         if(CurrentClk != getClk())
         {
@@ -95,6 +97,7 @@ int main(int argc, char * argv[])
                     send_val = msgsnd(msgq_id, &message, sizeof(message), !IPC_NOWAIT);
                     if (send_val == -1)
                         perror("Error in send");
+                    flag = true;
                 }
                 else
                 {
@@ -102,10 +105,15 @@ int main(int argc, char * argv[])
                     break;
                 }
             }
+            if(flag)
+                kill(pid, SIGUSR1);
         }
     }
-    // 7. Clear clock resources
-    sleep(5);
+    sleep(2);
+    kill(pid, SIGUSR2);
+    int stat_loc;
+    waitpid(pid, &stat_loc, 0);
+    // 7. Clear clock resourced
     destroyClk(true);
 }
 
