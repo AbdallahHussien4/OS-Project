@@ -106,7 +106,9 @@ int main(int argc, char * argv[])
                 }
             }
             if(flag)
-                kill(pid, SIGUSR1);
+                {
+                	kill(pid, SIGUSR1);
+        	 }
         }
     }
     sleep(2);

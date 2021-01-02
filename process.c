@@ -14,6 +14,7 @@ int main(int agrc, char * argv[])
     {
         if(CurrentClk != getClk())
         {
+        	//fprintf(stderr,"Process Gowa\n ");
             CurrentClk = getClk();
             remainingtime--;
         }

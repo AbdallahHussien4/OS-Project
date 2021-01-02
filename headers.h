@@ -37,6 +37,7 @@ struct msgbuffer
 struct process
 {
     bool forked;
+    int processId;
     int lastTime;
     int ArrivalTime;
     int RunTime;
@@ -107,6 +108,8 @@ struct process * newNode(struct process * p)
 { 
     struct process * temp = (struct process *)malloc(sizeof(struct process)); 
     temp->ArrivalTime = p->ArrivalTime;
+    temp->lastTime = p->ArrivalTime;
+    temp->processId = p->processId;
     temp->RunTime = p->RunTime;
     temp->Priority = p->Priority;
     temp->Id = p->Id;
