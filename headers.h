@@ -108,7 +108,7 @@ struct process * newNode(struct process * p)
 { 
     struct process * temp = (struct process *)malloc(sizeof(struct process)); 
     temp->ArrivalTime = p->ArrivalTime;
-    temp->lastTime = p->ArrivalTime;
+    temp->lastTime = p->lastTime;
     temp->processId = p->processId;
     temp->RunTime = p->RunTime;
     temp->Priority = p->Priority;

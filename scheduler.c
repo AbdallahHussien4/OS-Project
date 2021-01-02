@@ -7,6 +7,31 @@ int Algorithm, rec_val, stat_loc, msgq_id, pid;
 Queue Processes;
 bool finished = false;
 
+void HPF()
+{
+	while(!finished || (Processes.head != NULL))
+            {
+                if(Processes.head != NULL)
+                {
+                    struct process * CurrentProcess = pop(&Processes);
+                    CurrentProcess->WaitingTime = getClk() - CurrentProcess->ArrivalTime;
+                    pid = fork();
+                    
+                    if(!pid)
+                    {
+                        printf("Process with id %d has started at %d\n", CurrentProcess->Id, getClk());
+                        char number[6];
+                        snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                        execl("process.out", "process.out", number, NULL);
+                    }
+                    waitpid(pid, &stat_loc, 0);
+                    printf("Process with id %d has finished at %d and waited for %d\n=======================\n", CurrentProcess->Id, getClk(), CurrentProcess->WaitingTime);
+                    free(CurrentProcess);
+
+                }
+            }
+}
+
 void SRTN()
 {
     int startTime = -1, currentRemaining = -1, lastUpdate = 0;
@@ -27,11 +52,13 @@ void SRTN()
                 else if(!currentRemaining){
                 	//fprintf(stderr,"Hello");
                     waitpid(CurrentProcess->processId, &stat_loc, 0);
-                     fprintf(stderr,"Process with ID: %d, finished at %d\n", CurrentProcess->Id, getClk());
+                     fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
                     //fflush(stdout);
                     free(CurrentProcess);
                     CurrentProcess = pop(&Processes);
+                    
                     CurrentProcess->WaitingTime +=(getClk() - CurrentProcess->lastTime);
+      
                     startTime = getClk();
                     currentRemaining = CurrentProcess->RemainingTime;
                     if(CurrentProcess->processId != -1) 
@@ -46,12 +73,14 @@ void SRTN()
                     kill(CurrentProcess->processId, SIGSTOP);
                     CurrentProcess->RemainingTime = currentRemaining;
                     CurrentProcess->lastTime = getClk();
+                  
                     push(&Processes, CurrentProcess, Algorithm);
                      fprintf(stderr,"Process with id %d has stopped at %d \n=======\n", CurrentProcess->Id, getClk());
                      //fflush(stdout);
                     // new process
                     CurrentProcess = pop(&Processes);
                     CurrentProcess->WaitingTime +=(getClk() - CurrentProcess->lastTime);
+                 
                     startTime = getClk();
                     currentRemaining = CurrentProcess->RemainingTime;
                     if(CurrentProcess->processId != -1) 
@@ -86,7 +115,7 @@ void SRTN()
             }
     }
     waitpid(CurrentProcess->processId, &stat_loc, 0);
-     fprintf(stderr,"Process with ID: %d, finished at %d\n", CurrentProcess->Id, getClk());
+     fprintf(stderr,"Process with ID: %d, finished at %d and waited for %d\n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
      //fflush(stdout);
     free(CurrentProcess);
 }
@@ -117,27 +146,7 @@ int main(int argc, char * argv[])
     switch(Algorithm)
     {
         case 1:
-            while(!finished || (Processes.head != NULL))
-            {
-                if(Processes.head != NULL)
-                {
-                    struct process * CurrentProcess = pop(&Processes);
-                    CurrentProcess->WaitingTime = getClk() - CurrentProcess->ArrivalTime;
-                    pid = fork();
-                    
-                    if(!pid)
-                    {
-                        printf("Process with id %d has started at %d\n", CurrentProcess->Id, getClk());
-                        char number[6];
-                        snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
-                        execl("process.out", "process.out", number, NULL);
-                    }
-                    waitpid(pid, &stat_loc, 0);
-                    printf("Process with id %d has finished at %d and waited for %d\n=======================\n", CurrentProcess->Id, getClk(), CurrentProcess->WaitingTime);
-                    free(CurrentProcess);
-
-                }
-            }
+            HPF();
             break;            
         case 2:
         	SRTN();
@@ -180,6 +189,5 @@ void receiveProcess(int signum){
 }
 
 void lastProcess(int signum){
-    printf("******************\n%d\n*********************\n",getClk());
     finished = true;
 }
