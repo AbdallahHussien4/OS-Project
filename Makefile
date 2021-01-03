@@ -14,6 +14,7 @@ run:
 	./process_generator.out
 
 kill:
+	ipcrm -a
 	killall -e clk.out
 	killall -e scheduler.out
 	killall -e process_generator.out

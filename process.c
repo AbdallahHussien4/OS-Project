@@ -20,7 +20,8 @@ int main(int agrc, char * argv[])
         }
     }
     // printf("%d", atoi(argv[1]));
-
+    int clk = getClk();
+    fprintf(stderr,"\n\n remaining %d , clk %d\n\n", remainingtime, clk);
     destroyClk(false);
-    exit(0);
+    exit(clk);
 }

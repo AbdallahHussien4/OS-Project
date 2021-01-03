@@ -30,13 +30,18 @@ int main(int argc, char * argv[])
     }
 
     // 2. Ask the user for the chosen scheduling algorithm and its parameters, if there are any.
-    char ch;
+    char ch, Q[2];
     printf("Choose scheduler algorithm \n");
     printf("1 for HPF \n");
     printf("2 for SRTN \n");
     printf("3 for RR \n");
     scanf("%c", &ch);
     
+    if(ch=='3')
+    {
+        printf("Please enter your Quantum : \n");
+        scanf("%s", Q);
+    }
     // 3. Initiate and create the scheduler and clock processes.
     int pid;
     for(int i = 0; i < 2; i++)
@@ -50,7 +55,7 @@ int main(int argc, char * argv[])
             if(!i)
                 execl("clk.out", "clk.out", NULL);
             else
-                execl("scheduler.out", "scheduler.out", &ch, NULL);    
+                execl("scheduler.out", "scheduler.out", &ch, &Q, NULL);    
         }
     }
     // 4. Use this function after creating the clock process to initialize clock

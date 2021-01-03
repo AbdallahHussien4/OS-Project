@@ -36,7 +36,6 @@ struct msgbuffer
 
 struct process
 {
-    bool forked;
     int processId;
     int lastTime;
     int ArrivalTime;
@@ -108,13 +107,13 @@ struct process * newNode(struct process * p)
 { 
     struct process * temp = (struct process *)malloc(sizeof(struct process)); 
     temp->ArrivalTime = p->ArrivalTime;
-    temp->lastTime = p->lastTime;
-    temp->processId = p->processId;
     temp->RunTime = p->RunTime;
     temp->Priority = p->Priority;
     temp->Id = p->Id;
     temp->WaitingTime = p->WaitingTime;
     temp->RemainingTime = p->RemainingTime;
+    temp->lastTime = p->lastTime;
+    temp->processId = p->processId;
     temp->next = NULL;
     
     return temp; 
@@ -128,10 +127,10 @@ void printQueue(Queue * q){
         return;
     }
     while(start){
-        printf("%d\n", start->Priority);
+        fprintf(stderr,"ID: %d, R:%d\n", start->Id, start->RemainingTime);
         start = start->next;
     }
-    printf("=============\n");
+    printf("========\n");
     return;
 };
 
