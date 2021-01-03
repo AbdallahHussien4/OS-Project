@@ -2,10 +2,97 @@
 
 void receiveProcess(int signum);
 void lastProcess(int signum);
-
+void HPF();
+void SRTN();
+void RR(int Quantum);
 int Algorithm, rec_val, stat_loc, msgq_id, pid;
 Queue Processes;
 bool finished = false;
+int WT,TA,WTA,Util,STD;
+
+int main(int argc, char * argv[])
+{
+
+	FILE *fptr,*fptr2;
+    fptr = fopen("./log.txt","w");
+    fptr2 = fopen("./pref.txt","w");
+    if( fptr == NULL ||fptr2 ==NULL)
+    {
+        printf("Error opening the file!");
+        exit(1);
+    }
+    //char *headerLog = "#At time x process y state arr w total z remain y wait k\n";
+    //fprintf(fptr,"%s",headerLog);
+    
+    signal(SIGUSR1, receiveProcess);
+    signal(SIGUSR2, lastProcess);
+    Algorithm = atoi(argv[1]);
+    printf("Algorithm Number is %d\n",Algorithm);
+    initClk();
+    
+    key_t key_id;
+    
+
+    key_id = ftok("gen_schdlr_com", 65);               
+    msgq_id = msgget(key_id, 0666 | IPC_CREAT); 
+
+    if (msgq_id == -1)
+    {
+        perror("Error in create");
+        exit(-1);
+    }
+
+    switch(Algorithm)
+    {
+        case 1:
+            HPF();
+            break;            
+        case 2:
+        	SRTN();
+            break;
+        default:
+            RR(atoi(argv[2]));
+            break;
+    }
+
+
+    //TODO implement the scheduler :)
+    //upon termination release the clock resources.
+    
+    fclose(fptr);
+    fclose(fptr2);
+    destroyClk(false);
+}
+
+void receiveProcess(int signum){
+    signal(SIGUSR1, receiveProcess);
+    struct msgbuffer message;
+    struct process receivedProcess;
+    do
+    {
+        rec_val = msgrcv(msgq_id, &message, sizeof(message), 0, IPC_NOWAIT);
+        if(rec_val!=-1)
+        {
+            receivedProcess.Id = message.Id;
+            receivedProcess.ArrivalTime = message.ArrivalTime;
+            receivedProcess.lastTime = message.ArrivalTime;
+            receivedProcess.processId = -1;
+            receivedProcess.RunTime = message.RunTime;
+            receivedProcess.Priority = message.Priority;
+            receivedProcess.WaitingTime = 0;
+            receivedProcess.RemainingTime = message.RunTime;
+            receivedProcess.next = NULL;
+            // printf("%d %d %d %d %d %d\n", receivedProcess.Id, receivedProcess.ArrivalTime, receivedProcess.Priority, receivedProcess.RunTime, receivedProcess.RemainingTime, receivedProcess.WaitingTime);
+            push(&Processes, &receivedProcess, Algorithm);
+            //printQueue(&Processes);
+        }
+    } while(rec_val!=-1);
+}
+
+void lastProcess(int signum){
+    finished = true;
+}
+
 
 void HPF()
 {
@@ -142,7 +229,7 @@ void RR(int Quantum)
                 if(currentRemaining <= 0)
                 {
                     waitpid(CurrentProcess->processId, &stat_loc, 0);
-                    fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, stat_loc>>8,CurrentProcess->WaitingTime);
+                    fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
                     free(CurrentProcess);
                 }
                 CurrentProcess = pop(&Processes);
@@ -192,78 +279,7 @@ void RR(int Quantum)
         }
     }
     waitpid(CurrentProcess->processId, &stat_loc, 0);
-    fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, stat_loc>>8,CurrentProcess->WaitingTime);
+    fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
     free(CurrentProcess);
 }
 
-int main(int argc, char * argv[])
-{
-    signal(SIGUSR1, receiveProcess);
-    signal(SIGUSR2, lastProcess);
-    Algorithm = atoi(argv[1]);
-    // int n = atoi(argv[2]);
-    // printf("%d\n", n);
-    printf("Algorithm Number is %d\n",Algorithm);
-    initClk();
-    
-    key_t key_id;
-    
-
-    key_id = ftok("gen_schdlr_com", 65);               
-    msgq_id = msgget(key_id, 0666 | IPC_CREAT); 
-
-    if (msgq_id == -1)
-    {
-        perror("Error in create");
-        exit(-1);
-    }
-    //printf("Message Queue ID = %d\n", msgq_id);
-    switch(Algorithm)
-    {
-        case 1:
-            HPF();
-            break;            
-        case 2:
-        	SRTN();
-            break;
-        default:
-            RR(atoi(argv[2]));
-            break;
-
-		while(1);
-    }
-
-
-    //TODO implement the scheduler :)
-    //upon termination release the clock resources.
-    destroyClk(false);
-}
-
-void receiveProcess(int signum){
-    signal(SIGUSR1, receiveProcess);
-    struct msgbuffer message;
-    struct process receivedProcess;
-    do
-    {
-        rec_val = msgrcv(msgq_id, &message, sizeof(message), 0, IPC_NOWAIT);
-        if(rec_val!=-1)
-        {
-            receivedProcess.Id = message.Id;
-            receivedProcess.ArrivalTime = message.ArrivalTime;
-            receivedProcess.lastTime = message.ArrivalTime;
-            receivedProcess.processId = -1;
-            receivedProcess.RunTime = message.RunTime;
-            receivedProcess.Priority = message.Priority;
-            receivedProcess.WaitingTime = 0;
-            receivedProcess.RemainingTime = message.RunTime;
-            receivedProcess.next = NULL;
-            // printf("%d %d %d %d %d %d\n", receivedProcess.Id, receivedProcess.ArrivalTime, receivedProcess.Priority, receivedProcess.RunTime, receivedProcess.RemainingTime, receivedProcess.WaitingTime);
-            push(&Processes, &receivedProcess, Algorithm);
-            //printQueue(&Processes);
-        }
-    } while(rec_val!=-1);
-}
-
-void lastProcess(int signum){
-    finished = true;
-}
