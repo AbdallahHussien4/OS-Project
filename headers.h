@@ -199,24 +199,4 @@ void push(Queue * q, struct process * p, int Algorithm)
 } 
 
 
-// ===================================================
-// =============== Printing Functions ================
-// ===================================================
-
-void writeLogs(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k){
-    if( y == 0){
-        float TA = (w == 1)?time:time - w ;
-        float WTA = TA/(z) ;
-        fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d  TA %.2f WTA %.2f \n",time,process,state,w,z,y,k,TA,WTA);
-    }
-    else {
-        fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d \n",time,process,state,w,z,y,k);
-    }
-}
-void writeStatus(FILE *fptr,float util, float avgWTA , float avgW , float stdWTA){
-    fprintf(fptr,"CPU utilization = %.2f%% \n",util);
-    fprintf(fptr,"Avg WTA = %.2f \n",avgWTA);
-    fprintf(fptr,"Avg Waiting = %.2f \n",avgW);
-    fprintf(fptr,"Std WTA = %.2f \n",stdWTA);
-}
 
