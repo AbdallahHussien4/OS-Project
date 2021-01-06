@@ -5,17 +5,19 @@ void lastProcess(int signum);
 void HPF(FILE *fptr);
 void SRTN(FILE *fptr);
 void RR(int Quantum,FILE *fptr);
-void writeStatus(FILE *fptr,float util, float avgWTA , float avgW , float stdWTA);
+void writeStatus(FILE *fptr,float util, float avgWTA , float avgW);
 void writeLogs(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k);
 
 int Algorithm, rec_val, stat_loc, msgq_id, pid,LastFinish=0;
-Queue Processes;
+Queue Processes;	
+Array Wt;
 bool finished = false;
-float TWT=0,TTA=0,TWTA=0,Wasted=0,STD=0,ProcessesNum=0;
+float TWT=0,TTA=0,TWTA=0,Wasted=0,ProcessesNum=0;
+double STD=0;
 
 int main(int argc, char * argv[])
 {
-
+	
 	FILE *fptr,*fptr2;
     fptr = fopen("./log.txt","w");
     fptr2 = fopen("./pref.txt","w");
@@ -30,7 +32,7 @@ int main(int argc, char * argv[])
     Algorithm = atoi(argv[1]);
     printf("Algorithm Number is %d\n",Algorithm);
     initClk();
-    
+    initArray(&Wt,5);
     key_t key_id;
     
 
@@ -59,12 +61,16 @@ int main(int argc, char * argv[])
 
     //TODO implement the scheduler :)
     //upon termination release the clock resources.
-    writeStatus(fptr2,(LastFinish-Wasted)*100/LastFinish,TWTA/ProcessesNum , TWT/ProcessesNum , 0);
+    writeStatus(fptr2,(LastFinish-Wasted)*100/LastFinish,TWTA/ProcessesNum , TWT/ProcessesNum);
+    freeArray(&Wt);
     fclose(fptr);
     fclose(fptr2);
     destroyClk(false);
 }
 
+// =====================================================================
+// =============== Signal To Receive Processes =========================
+// =====================================================================
 void receiveProcess(int signum){
     signal(SIGUSR1, receiveProcess);
     struct msgbuffer message;
@@ -90,10 +96,16 @@ void receiveProcess(int signum){
     } while(rec_val!=-1);
 }
 
+// ==================================================================================================
+// =============== Signal To Know if Process generator finishs its prcesses =========================
+// ==================================================================================================
 void lastProcess(int signum){
     finished = true;
 }
 
+// =====================================================================
+// =============== HPF Algorithm ========================================
+// =====================================================================
 
 void HPF(FILE *fptr)
 {
@@ -125,6 +137,10 @@ void HPF(FILE *fptr)
         }
     }
 }
+
+// =====================================================================
+// =============== SRTN Algorithm ========================================
+// =====================================================================
 
 void SRTN(FILE *fptr)
 {
@@ -228,6 +244,10 @@ void SRTN(FILE *fptr)
 }
 
 
+// =====================================================================
+// =============== RR Algorithm ========================================
+// =====================================================================
+
 void RR(int Quantum,FILE *fptr)
 {
     int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1;
@@ -325,6 +345,7 @@ void writeLogs(FILE *fptr,int time,int process,char* state,int w,int z,int y,int
         TTA+=TA;
         TWTA+=WTA;
         TWT+=k;
+        insertArray(&Wt,WTA);
         ProcessesNum+=1;
         fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d  TA %.2f WTA %.2f \n",time,process,state,w,z,y,k,TA,WTA);
     }
@@ -332,11 +353,21 @@ void writeLogs(FILE *fptr,int time,int process,char* state,int w,int z,int y,int
         fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d \n",time,process,state,w,z,y,k);
     }
 }
-void writeStatus(FILE *fptr,float util, float avgWTA , float avgW , float stdWTA){
+void writeStatus(FILE *fptr,float util, float avgWTA , float avgW){
+
+	//Calculate STD
+	double totalSum = 0;
+    for(int i =0; i<ProcessesNum;i++){
+        Wt.array[i] -= avgWTA;
+        totalSum += Wt.array[i]*Wt.array[i];
+    }
+    STD = totalSum/ProcessesNum;
+    STD = sqrt(STD);
+    
     fprintf(fptr,"CPU utilization = %.2f%% \n",util);
     fprintf(fptr,"Avg WTA = %.2f \n",avgWTA);
     fprintf(fptr,"Avg Waiting = %.2f \n",avgW);
-    fprintf(fptr,"Std WTA = %.2f \n",stdWTA);
+    fprintf(fptr,"Std WTA = %.2f \n",STD);
 }
 
 
