@@ -29,6 +29,7 @@ int * shmaddr;                 //
 struct msgbuffer
 {
     int mtype;
+    int memory;
     int ArrivalTime;
     int RunTime;
     int Priority;
@@ -38,6 +39,7 @@ struct msgbuffer
 struct process
 {
     int processId;
+    int memory;
     int lastTime;
     int ArrivalTime;
     int RunTime;
@@ -115,6 +117,7 @@ struct process * newNode(struct process * p)
     temp->RemainingTime = p->RemainingTime;
     temp->lastTime = p->lastTime;
     temp->processId = p->processId;
+    temp->memory = p->memory;
     temp->next = NULL;
     
     return temp; 
@@ -128,7 +131,7 @@ void printQueue(Queue * q){
         return;
     }
     while(start){
-        fprintf(stderr,"ID: %d, R:%d\n", start->Id, start->RemainingTime);
+        fprintf(stderr,"ID: %d, M:%d\n", start->Id, start->memory);
         start = start->next;
     }
     printf("========\n");

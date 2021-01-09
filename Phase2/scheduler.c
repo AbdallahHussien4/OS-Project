@@ -44,7 +44,7 @@ int main(int argc, char * argv[])
         perror("Error in create");
         exit(-1);
     }
-
+    while(1);
     switch(Algorithm)
     {
         case 1:
@@ -88,10 +88,11 @@ void receiveProcess(int signum){
             receivedProcess.Priority = message.Priority;
             receivedProcess.WaitingTime = 0;
             receivedProcess.RemainingTime = message.RunTime;
+            receivedProcess.memory = message.memory;
             receivedProcess.next = NULL;
             // printf("%d %d %d %d %d %d\n", receivedProcess.Id, receivedProcess.ArrivalTime, receivedProcess.Priority, receivedProcess.RunTime, receivedProcess.RemainingTime, receivedProcess.WaitingTime);
             push(&Processes, &receivedProcess, Algorithm);
-            //printQueue(&Processes);
+            printQueue(&Processes);
         }
     } while(rec_val!=-1);
 }
@@ -371,3 +372,17 @@ void writeStatus(FILE *fptr,float util, float avgWTA , float avgW){
 }
 
 
+int nextPowerOf2(unsigned int n) 
+{ 
+    unsigned count = 0; 
+    if (n && !(n & (n - 1))) 
+        return n; 
+    
+    while( n != 0) 
+    { 
+        n >>= 1; 
+        count += 1; 
+    } 
+    
+    return 1 << count; 
+} 
