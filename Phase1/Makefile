@@ -8,7 +8,7 @@ build:
 clean:
 	rm -f *.out *.log *.perf  # processes.txt
 
-all: clean build
+all: clean build kill
 
 run:
 	./process_generator.out
