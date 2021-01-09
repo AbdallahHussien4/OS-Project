@@ -19,8 +19,8 @@ int main(int argc, char * argv[])
 {
 	
 	FILE *fptr,*fptr2;
-    fptr = fopen("./log.txt","w");
-    fptr2 = fopen("./pref.txt","w");
+    fptr = fopen("./scheduler.log","w");
+    fptr2 = fopen("./scheduler.perf","w");
     if( fptr == NULL ||fptr2 ==NULL)
     {
         printf("Error opening the file!");

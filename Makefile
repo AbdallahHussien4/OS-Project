@@ -6,7 +6,7 @@ build:
 	gcc test_generator.c -o test_generator.out
 
 clean:
-	rm -f *.out log.txt pref.txt  # processes.txt
+	rm -f *.out *.log *.perf  # processes.txt
 
 all: clean build
 
