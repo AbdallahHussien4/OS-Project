@@ -50,6 +50,13 @@ struct process
     struct process* next; 
 };
 
+struct sector
+{
+    short s;
+    short e;
+    struct sector * next; 
+};
+
 int getClk()
 {
     return *shmaddr;
@@ -232,4 +239,118 @@ void freeArray(Array *a) {
   free(a->array);
   a->array = NULL;
   a->used = a->size = 0;
+}
+
+
+
+// ===============================================
+// ==================== MEMORY ===================
+// ===============================================
+
+struct MemoryQueue{
+    struct sector * head;
+    long size;
+};
+
+typedef struct MemoryQueue MemoryQueue;
+MemoryQueue * initMemory()
+{
+    MemoryQueue * q = (MemoryQueue *)malloc(sizeof(MemoryQueue));
+    q->head = NULL;
+    q->size = 0;
+    return q;
+}
+
+struct sector * newSector(struct sector * p) 
+{ 
+    struct sector * temp = (struct sector *)malloc(sizeof(struct sector)); 
+    temp->s = p->s;
+    temp->e = p->e;
+    temp->next = NULL;
+    
+    return temp; 
+}
+
+void printSector(MemoryQueue * q){
+    struct sector* start = (q->head); 
+    if(start == NULL)
+    {
+        printf("Empty Queue\n");
+        return;
+    }
+    while(start){
+        fprintf(stderr,"S: %d, E: %d\n", start->s, start->e);
+        start = start->next;
+    }
+    printf("========\n");
+    return;
+};
+
+struct sector * popSector(MemoryQueue * q) 
+{ 
+    struct sector * temp = q->head; 
+    q->head = q->head->next; 
+    return temp; 
+} 
+
+struct sector * pushSector(MemoryQueue * q, struct sector * p, bool merge) 
+{ 
+    struct sector* start = (q->head);
+    struct sector* previous = (q->head); 
+    struct sector* temp = newSector(p); 
+
+    if((q->head) == NULL)
+    {
+        q->head = temp;
+        return NULL;
+    }
+    if ((q->head)->s > p->s) 
+    { 
+        temp->next = q->head; 
+        (q->head) = temp; 
+    } 
+    else
+    { 
+        while (start->next != NULL && start->next->s < p->s)
+        { 
+            previous = start;
+            start = start->next;
+        } 
+
+        temp->next = start->next; 
+        start->next = temp; 
+    }
+    if(merge)
+    {
+        if(temp->next && !((temp->s / (temp->e - temp->s))%2))
+        {
+            if(temp->next->s == temp->e + 1)
+            {
+                struct sector * t = (struct sector *)malloc(sizeof(struct sector));
+                t->s = temp->s;
+                t->e = temp->next->e;
+                if(temp == q->head)
+                    q->head = temp->next->next;
+                else
+                    start->next = temp->next->next;
+                return t;
+            }
+        }
+
+        if(start->next && !((start->s / (temp->e - temp->s))%2))
+        {
+            if(temp->s == start->e + 1)
+            {
+                struct sector * t = (struct sector *)malloc(sizeof(struct sector));
+                t->s = start->s;
+                t->e = temp->e;
+                if(start == q->head)
+                    q->head = temp->next;
+                else
+                    previous->next = temp->next;
+                return t;
+            }
+        }
+    }
+    return NULL;
 }
