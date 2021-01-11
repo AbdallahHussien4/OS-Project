@@ -113,6 +113,14 @@ struct Queue{
 
 typedef struct Queue Queue;
 
+Queue * initQueue()
+{
+    Queue * q = (Queue *)malloc(sizeof(Queue));
+    q->head = NULL;
+    q->size = 0;
+    return q;
+}
+
 struct process * newNode(struct process * p) 
 { 
     struct process * temp = (struct process *)malloc(sizeof(struct process)); 
@@ -246,14 +254,27 @@ void freeArray(Array *a) {
 // ===============================================
 // ==================== MEMORY ===================
 // ===============================================
-
+int nextPowerOf2(unsigned int n) 
+{ 
+    unsigned count = 0; 
+    if (n && !(n & (n - 1))) 
+        return n; 
+    
+    while( n != 0) 
+    { 
+        n >>= 1; 
+        count += 1; 
+    } 
+    
+    return 1 << count; 
+} 
 struct MemoryQueue{
     struct sector * head;
     long size;
 };
 
 typedef struct MemoryQueue MemoryQueue;
-MemoryQueue * initMemory()
+MemoryQueue * initMemoryQ()
 {
     MemoryQueue * q = (MemoryQueue *)malloc(sizeof(MemoryQueue));
     q->head = NULL;
@@ -353,4 +374,59 @@ struct sector * pushSector(MemoryQueue * q, struct sector * p, bool merge)
         }
     }
     return NULL;
+}
+
+
+struct Memory{
+    struct MemoryQueue * head[6];
+};
+
+typedef struct Memory Memory;
+
+Memory * initMemory()
+{
+    Memory * q = (Memory *)malloc(sizeof(Memory));
+    for(int i = 0; i<6; i++)
+        q->head[i] = initMemoryQ();
+    
+    struct sector * s = (struct sector *)malloc(sizeof(struct sector));
+    s->s = 0;
+    s->e = 255;
+    pushSector(q->head[5], s, false);
+    s->s = 256;
+    s->e = 511;
+    pushSector(q->head[5], s, false);
+    s->s = 512;
+    s->e = 767;
+    pushSector(q->head[5], s, false);
+    s->s = 768;
+    s->e = 1024;
+    pushSector(q->head[5], s, false);
+
+    return q;
+}
+
+struct sector * allocate(Memory * m, int size)
+{
+    int real_size = nextPowerOf2(size);
+
+    int index = (log(real_size) / log(2)) - 3 ;
+    while((index < 6) && (m->head[index]->head == NULL))
+        index++;
+    printSector(m->head[index]);
+    fprintf(stderr, "%d\n",index);
+    if(index == 6)
+        return NULL;
+
+    struct sector * s = popSector(m->head[index]);
+    struct sector * temp = (struct sector *)malloc(sizeof(struct sector));
+    while(((s->e + 1) - s->s) > real_size)
+    {
+        temp->s = s->s + (s->e - s->s)/2 + 1;
+        temp->e = s->e;
+        index--;
+        pushSector(m->head[index], temp, false);
+        s->e = s->s + (s->e - s->s)/2;
+    }
+    return s;
 }
