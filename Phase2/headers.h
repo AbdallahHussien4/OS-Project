@@ -48,6 +48,7 @@ struct process
     int WaitingTime;
     int RemainingTime;
     struct process* next; 
+    struct sector * Sector;
 };
 
 struct sector
@@ -341,7 +342,7 @@ struct sector * pushSector(MemoryQueue * q, struct sector * p, bool merge)
         temp->next = start->next; 
         start->next = temp; 
     }
-    if(merge)
+    if(merge && ((p->e - p->s) < 255))
     {
         if(temp->next && !((temp->s / (temp->e - temp->s))%2))
         {
@@ -413,8 +414,6 @@ struct sector * allocate(Memory * m, int size)
     int index = (log(real_size) / log(2)) - 3 ;
     while((index < 6) && (m->head[index]->head == NULL))
         index++;
-    printSector(m->head[index]);
-    fprintf(stderr, "%d\n",index);
     if(index == 6)
         return NULL;
 
@@ -429,4 +428,23 @@ struct sector * allocate(Memory * m, int size)
         s->e = s->s + (s->e - s->s)/2;
     }
     return s;
+}
+
+int deallocate(Memory * m, struct sector *s)
+{   
+    int index = (log(s->e + 1 - s->s) / log(2)) - 3 ;
+    struct sector * pushed = pushSector(m->head[index], s, true);
+    while((pushed != NULL))
+    {
+        index++;
+        if(index < 5)
+            pushed = pushSector(m->head[index], pushed, true);
+        else
+            pushed = pushSector(m->head[index], pushed, false);
+        
+    }
+    if(pushed)
+        return (pushed->e - pushed->s +1);
+    else 
+        return 256;
 }
