@@ -253,7 +253,7 @@ void SRTN(FILE *fptr, FILE * m)
 
 void RR(int Quantum,FILE *fptr, FILE * m)
 {
-    int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1;
+    int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1, size = 300;
     struct process * CurrentProcess = NULL;
     while(!finished || (Processes.head != NULL))
     {
@@ -274,26 +274,44 @@ void RR(int Quantum,FILE *fptr, FILE * m)
                 {
                     waitpid(CurrentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
+                    writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
+                    size = deallocate(memory, CurrentProcess->Sector);
                     writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
                     free(CurrentProcess);
                 }
-                CurrentProcess = pop(&Processes);
+                if(ReadyQueue.head == NULL)
+                    CurrentProcess = pop(&Processes);
+                else
+                {
+                    CurrentProcess = popReady(&Processes, size);
+                    if(CurrentProcess == NULL)
+                        CurrentProcess = pop(&Processes);
+                }
                 currentRemaining = CurrentProcess->RemainingTime;
                 CurrentProcess->WaitingTime += (getClk() - CurrentProcess->lastTime);
                 currentRuning = 0;
                 if(CurrentProcess->processId == -1)
                 {
-                    pid = fork();
-                    if(pid == 0)
-                    {
-                        char number[6];
-                        snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
-                        execl("process.out", "process.out", number, NULL);
+                    CurrentProcess->Sector = allocate(memory,CurrentProcess->memory);
+                    if(CurrentProcess->Sector)
+                    { 
+                        pid = fork();
+                        if(pid == 0)
+                        {
+                            char number[6];
+                            snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                            execl("process.out", "process.out", number, NULL);
+                        }
+                        if(LastFinish!=0)
+                            Wasted+=getClk()-LastFinish;
+                        writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
+                        writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                        CurrentProcess->processId = pid;
                     }
-                    if(LastFinish!=0)
-                    	Wasted+=getClk()-LastFinish;
-                    writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    CurrentProcess->processId = pid;
+                    else
+                    {
+                        push(&ReadyQueue, CurrentProcess, 4);
+                    }
                 }
                 else
                 {
@@ -326,6 +344,7 @@ void RR(int Quantum,FILE *fptr, FILE * m)
     }
     waitpid(CurrentProcess->processId, &stat_loc, 0);
     LastFinish=stat_loc>>8;
+    writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
     writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
     free(CurrentProcess);
 }
