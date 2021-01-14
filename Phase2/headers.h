@@ -135,7 +135,7 @@ struct process * newNode(struct process * p)
     temp->processId = p->processId;
     temp->memory = p->memory;
     temp->next = NULL;
-    
+    temp->Sector = p->Sector;
     return temp; 
 }
 
@@ -161,6 +161,27 @@ struct process * pop(Queue * q)
     q->head = q->head->next; 
     return temp; 
 } 
+struct process * popReady(Queue * q, int size)
+{   
+    if(size > q->head->memory)
+        return NULL;
+    struct process * temp = q->head;
+    struct process * previous = NULL; 
+    while((temp->next != NULL) && (temp->memory > size))
+    {
+        previous = temp;
+        temp = temp->next;   
+    }
+    if(previous == NULL)
+    {
+        q->head = q->head->next;
+    }
+    else
+    {
+        previous->next = temp->next;
+    }
+    return temp;
+}
 
 void push(Queue * q, struct process * p, int Algorithm) 
 { 
@@ -203,6 +224,23 @@ void push(Queue * q, struct process * p, int Algorithm)
                 { 
                     start = start->next; 
                 } 
+                temp->next = start->next; 
+                start->next = temp; 
+            }
+            break;
+        case 4:
+            if ((q->head)->memory < p->memory) 
+            { 
+                temp->next = q->head; 
+                (q->head) = temp; 
+            } 
+            else
+            { 
+                while (start->next != NULL && start->next->memory >= p->memory)
+                { 
+                    start = start->next; 
+                } 
+        
                 temp->next = start->next; 
                 start->next = temp; 
             }
