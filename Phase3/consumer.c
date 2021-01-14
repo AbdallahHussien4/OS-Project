@@ -61,8 +61,9 @@ int main(){
     union Semun semun;
     // Semaphores
     int mutex = semget(key_id,1,0666 | IPC_CREAT);
-    int full = semget(key_id+1,1,0666 | IPC_CREAT);
-    int empty = semget(key_id+2,1,0666 | IPC_CREAT);
+    int full = semget(key_id+10,1,0666 | IPC_CREAT);
+    int empty = semget(key_id+20,1,0666 | IPC_CREAT);
+    printf("the mutexID: %d, the fullID: %d, the emptyID: %d \n",mutex,full,empty);
     if (mutex == -1 || full == -1 || empty == -1)
     {
         perror("Error in create semphores");
@@ -95,9 +96,9 @@ int main(){
     fclose(fptr);
     // Shared memory 
     int bufferID = shmget(key_id,sizeof(int)*BUFFER_SIZE,0666 | IPC_CREAT);
-    int addID = shmget(key_id+1,sizeof(int),0666 | IPC_CREAT);
-    int remID = shmget(key_id+2,sizeof(int),0666 | IPC_CREAT);
-    int numID = shmget(key_id+3,sizeof(int),0666 | IPC_CREAT);
+    int addID = shmget(key_id+10,sizeof(int),0666 | IPC_CREAT);
+    int remID = shmget(key_id+20,sizeof(int),0666 | IPC_CREAT);
+    int numID = shmget(key_id+30,sizeof(int),0666 | IPC_CREAT);
     if (bufferID == -1 || addID == -1 || remID == -1 || numID == -1)
     {
         perror("Error in create the shared memory");
@@ -119,6 +120,7 @@ int main(){
         printf("item is consumed: %d\n",bufferAddr[remAddr[0]]);
         remAddr[0]= (remAddr[0]+1)%BUFFER_SIZE;
         numAddr[0]-=1;
+        printf("AddIndex: %d, RemoveIndex: %d, numIndex: %d\n",addAddr[0],remAddr[0],numAddr[0]);
         up(mutex);
         up(empty);
         sleep(3);
