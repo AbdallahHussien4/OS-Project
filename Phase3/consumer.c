@@ -72,10 +72,10 @@ void handler(int sigNum){
         semctl(mutex,0,IPC_RMID,NULL);
         semctl(full,0,IPC_RMID,NULL);
         semctl(empty,0,IPC_RMID,NULL);
-    }else{
-        fptr = fopen("counter.txt","w+");
-        fprintf(fptr,"%d",num);
+        remove("init.txt");
     }
+    fptr = fopen("counter.txt","w+");
+    fprintf(fptr,"%d",num);
     fclose(fptr);
     kill(getpid(),SIGKILL);
 }

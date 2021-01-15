@@ -72,9 +72,12 @@ void handler(int sigNum){
         semctl(mutex,0,IPC_RMID,NULL);
         semctl(full,0,IPC_RMID,NULL);
         semctl(empty,0,IPC_RMID,NULL);
-    }else{
-        fprintf(fptr,"%d",num);
+        // remove the init (initalization file)
+        remove("init.txt");
     }
+    fptr = fopen("counter.txt","w+");
+    fprintf(fptr,"%d",num);
+    fclose(fptr);
     kill(getpid(),SIGKILL);
 }
 
@@ -147,14 +150,22 @@ int main(){
     int *remAddr = shmat(addID, (void *)0, 0);
     int *addAddr = shmat(remID, (void *)0, 0);
     int *numAddr = shmat(numID, (void *)0, 0);
-    // numAddr[0] = 55;
-    // bufferAddr[0] = 0;
-    // bufferAddr[1] = 1;
-    // bufferAddr[2] = 2;
 
     // Main loop for the producer
     // TODO:: input is different from producer to another
-    int input = 1;
+    int input;
+    fptr = fopen("producerCount.txt","r");
+    if( fptr != NULL){
+        fscanf(fptr,"%d",&input);
+        fptr = fopen("producerCount.txt","w+");
+        input+=100;
+        fprintf(fptr,"%d",input);
+    }else{
+        fptr = fopen("producerCount.txt","a");
+        fprintf(fptr,"%d",1);
+        input = 1;
+    }
+    fclose(fptr);
     printf("Enter the Producer loop\n");
     while(1){
         down(empty);
