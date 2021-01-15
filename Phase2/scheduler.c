@@ -8,14 +8,14 @@ void RR(int Quantum,FILE *fptr, FILE * m);
 void writeStatus(FILE *fptr,float util, float avgWTA , float avgW);
 void writeLogs_scheduler(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k);
 void writeLogs_memory(FILE *fptr, int time, int bytes, int process, int start, int end, bool flag);
-int Algorithm, rec_val, stat_loc, msgq_id, pid,LastFinish=0;
+int Algorithm, rec_val, stat_loc, msgq_id, pid,LastFinish=0, msgq;
 Queue Processes, ReadyQueue;
 Memory * memory;	
 Array Wt;
 bool finished = false;
 float TWT=0,TTA=0,TWTA=0,Wasted=0,ProcessesNum=0;
 double STD=0;
-
+struct remain message;
 int main(int argc, char * argv[])
 {
 	FILE *fptr, *fptr2, *m;
@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
 
     key_id = ftok("gen_schdlr_com", 65);               
     msgq_id = msgget(key_id, 0666 | IPC_CREAT); 
-
+    msgq = msgget(60, 0666 | IPC_CREAT); 
     if (msgq_id == -1)
     {
         perror("Error in create");
@@ -123,10 +123,21 @@ void HPF(FILE *fptr, FILE * m)
                 snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
                 execl("process.out", "process.out", number, NULL);
             }
-            if(LastFinish!=0)
-            	Wasted+=getClk()-LastFinish;
+            // if(LastFinish!=0)
+            Wasted+=getClk()-LastFinish;
+
             writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
             writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+            int last = getClk();
+            while(CurrentProcess->RemainingTime > 0)
+            {   
+                if(getClk() - last >0)
+                {
+                    last = getClk();
+                    message.remainig = --(CurrentProcess->RemainingTime);
+                    msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
+                }
+            }
             waitpid(pid, &stat_loc, 0);
             LastFinish=stat_loc>>8;
             writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
@@ -157,6 +168,7 @@ void SRTN(FILE *fptr, FILE * m)
                 {
                     CurrentProcess = pop(&Processes);
                     startTime = getClk();
+                    lastUpdate = getClk();
                     currentRemaining = CurrentProcess->RemainingTime;
                 }
                 else if(!currentRemaining){
@@ -177,14 +189,6 @@ void SRTN(FILE *fptr, FILE * m)
                     
                     CurrentProcess->WaitingTime += (getClk() - CurrentProcess->lastTime);
       
-                    startTime = getClk();
-                    currentRemaining = CurrentProcess->RemainingTime;
-                    if(CurrentProcess->processId != -1) 
-                    {
-                        kill(CurrentProcess->processId, SIGCONT);
-                        Wasted+=getClk()-LastFinish;
-                        writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    }
                 }
                 else
                 {
@@ -197,15 +201,6 @@ void SRTN(FILE *fptr, FILE * m)
                     writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"stopped",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
                     CurrentProcess = pop(&Processes);
                     CurrentProcess->WaitingTime +=(getClk() - CurrentProcess->lastTime);
-                 
-                    startTime = getClk();
-                    currentRemaining = CurrentProcess->RemainingTime;
-                    if(CurrentProcess->processId != -1) 
-                    {
-                        kill(CurrentProcess->processId, SIGCONT);
-                        Wasted+=getClk()-LastFinish;
-                        writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    }
                 }
                 if(CurrentProcess->processId == -1)
                 {
@@ -214,8 +209,8 @@ void SRTN(FILE *fptr, FILE * m)
                     {   
                         pid = fork();
                         CurrentProcess->processId = pid;
-                        if(LastFinish!=0)
-                            Wasted+=getClk()-LastFinish;
+                        // if(LastFinish!=0)
+                        Wasted+=getClk()-LastFinish;
                         writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
                         writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
                         if(!pid)
@@ -224,19 +219,43 @@ void SRTN(FILE *fptr, FILE * m)
                             snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
                             execl("process.out", "process.out", number, NULL);
                         }
+                        currentRemaining = CurrentProcess->RemainingTime;
                     }
                     else
                     {
                         push(&ReadyQueue, CurrentProcess, 4);
                     }
                 }
+                else
+                {
+                    startTime = getClk();
+                    currentRemaining = CurrentProcess->RemainingTime;
+                    
+                    kill(CurrentProcess->processId, SIGCONT);
+                    Wasted+=getClk()-LastFinish;
+                    writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                    
+                }
                 
             }
         }
+        if(CurrentProcess && (getClk() - lastUpdate > 0))
+        {
+            // fprintf(stderr, "CR :%d  LU: %d Clk: %d\n",currentRemaining,lastUpdate,getClk());
+            currentRemaining -= (getClk() - lastUpdate);
+            lastUpdate = getClk();
+            message.remainig = currentRemaining;
+            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
+        }
+    }
+    while(currentRemaining || (getClk() - lastUpdate > 0))
+    {
         if(getClk() - lastUpdate > 0)
         {
             currentRemaining -= (getClk() - lastUpdate);
             lastUpdate = getClk();
+            message.remainig = currentRemaining;
+            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
         }
     }
     waitpid(CurrentProcess->processId, &stat_loc, 0);
@@ -302,8 +321,8 @@ void RR(int Quantum,FILE *fptr, FILE * m)
                             snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
                             execl("process.out", "process.out", number, NULL);
                         }
-                        if(LastFinish!=0)
-                            Wasted+=getClk()-LastFinish;
+                        // if(LastFinish!=0)
+                        Wasted+=getClk()-LastFinish;
                         writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
                         writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
                         CurrentProcess->processId = pid;
@@ -340,6 +359,18 @@ void RR(int Quantum,FILE *fptr, FILE * m)
             {
                 currentRuning = 0;
             }
+            message.remainig = currentRemaining;
+            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
+        }
+    }
+    while(currentRemaining || (getClk() - lastUpdate > 0))
+    {
+        if(getClk() - lastUpdate > 0)
+        {
+            currentRemaining -= (getClk() - lastUpdate);
+            lastUpdate = getClk();
+            message.remainig = currentRemaining;
+            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
         }
     }
     waitpid(CurrentProcess->processId, &stat_loc, 0);
@@ -356,7 +387,11 @@ void RR(int Quantum,FILE *fptr, FILE * m)
 void writeLogs_scheduler(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k){
     if( state == "finished"){
         float TA = (w == 1)?time:time - w ;
-        float WTA = TA/(z) ;
+        float WTA;
+        if(z)
+            WTA = TA/(z);
+        else
+            WTA = TA;
         TTA+=TA;
         TWTA+=WTA;
         TWT+=k;

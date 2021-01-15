@@ -36,6 +36,11 @@ struct msgbuffer
     int Id;
 };
 
+struct remain
+{
+    int remainig;
+};
+
 struct process
 {
     int processId;
@@ -439,7 +444,7 @@ Memory * initMemory()
     s->e = 767;
     pushSector(q->head[5], s, false);
     s->s = 768;
-    s->e = 1024;
+    s->e = 1023;
     pushSector(q->head[5], s, false);
 
     return q;
@@ -471,6 +476,8 @@ struct sector * allocate(Memory * m, int size)
 int deallocate(Memory * m, struct sector *s)
 {   
     int index = (log(s->e + 1 - s->s) / log(2)) - 3 ;
+    if(index < 0)
+        index = 0;
     struct sector * pushed = pushSector(m->head[index], s, true);
     while((pushed != NULL))
     {
