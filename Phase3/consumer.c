@@ -14,7 +14,7 @@
 #include <math.h>
 #define BUFFER_SIZE 10
 
-// globals
+// Globals variables for semaphores and shared memory
 int mutex,full,empty,bufferID,addID,remID,numID;
 
 // Semaphores Struct and functions
@@ -56,32 +56,34 @@ void up(int sem)
         exit(-1);
     }
 }
+// Signal Handler to delete all memory when exiting the last producer/consumer
 void handler(int sigNum){
     FILE *fptr;
-    fptr = fopen("counter.txt","r+");
-    int num;
+    fptr = fopen("counter.txt","r+");   // File save the shared data about the total no. of producers and consumers
+    int num;                            // The number of the current producers and consumers (Total)
     fscanf(fptr,"%d",&num);
     num--;
-    if(num == 0){
-        // Shared memory
+    if(num == 0){                       // If this is the last one so clear the memory and remover the init file from the folder
+        // Shared memory -> removeal
         shmctl(bufferID, IPC_RMID, (struct shmid_ds *)0);
         shmctl(addID, IPC_RMID, (struct shmid_ds *)0);
         shmctl(remID, IPC_RMID, (struct shmid_ds *)0);
         shmctl(numID, IPC_RMID, (struct shmid_ds *)0);
-        // Semphores
+        // Semphores -> removal
         semctl(mutex,0,IPC_RMID,NULL);
         semctl(full,0,IPC_RMID,NULL);
         semctl(empty,0,IPC_RMID,NULL);
+        // File -> removal
         remove("init.txt");
     }
+    // Edit the file for the current num of producers and consumers
     fptr = fopen("counter.txt","w+");
     fprintf(fptr,"%d",num);
     fclose(fptr);
-    kill(getpid(),SIGKILL);
+    kill(getpid(),SIGKILL);   // Kill the process
 }
 
 int main(){
-    signal(SIGINT,handler);
     // First check in the counter text by adding one to the value 
     FILE *fptr;
     fptr = fopen("counter.txt","r+");
@@ -96,6 +98,7 @@ int main(){
         fprintf(fptr,"%d",1);
     }
     fclose(fptr);
+    signal(SIGINT,handler);             // Add the handler if the process is closed to clear the memory
     // Create the initialization shared memory and semaphores
     key_t key_id;
     key_id = ftok("keyfile", 65);
@@ -104,14 +107,12 @@ int main(){
     mutex = semget(key_id,1,0666 | IPC_CREAT);
     full = semget(key_id+10,1,0666 | IPC_CREAT);
     empty = semget(key_id+20,1,0666 | IPC_CREAT);
-    printf("the mutexID: %d, the fullID: %d, the emptyID: %d \n",mutex,full,empty);
     if (mutex == -1 || full == -1 || empty == -1)
     {
         perror("Error in create semphores");
         exit(-1);
     }
-    // intialize the semaphores
-    
+    // Intialize the Semaphores by creating the file if not exist so intialize , if exist don't intialize it
     fptr = fopen("init.txt","r");
     if(fptr == NULL){
         fptr = fopen("init.txt","a+");
@@ -135,6 +136,7 @@ int main(){
         }
     }
     fclose(fptr);
+
     // Shared memory 
     bufferID = shmget(key_id,sizeof(int)*BUFFER_SIZE,0666 | IPC_CREAT);
     addID = shmget(key_id+10,sizeof(int),0666 | IPC_CREAT);
@@ -145,27 +147,25 @@ int main(){
         perror("Error in create the shared memory");
         exit(-1);
     }
+
     // Attach the shared memory to the program address
     int *bufferAddr = shmat(bufferID, (void *)0, 0);
     int *remAddr = shmat(addID, (void *)0, 0);
     int *addAddr = shmat(remID, (void *)0, 0);
     int *numAddr = shmat(numID, (void *)0, 0);
 
-    printf("%d\n",bufferAddr[2]);
     // Main loop of the consumer
     printf("Enter the consumer loop \n");
     while(1){
         down(full);
         down(mutex);
-        // if(numAddr[0]<0) exit(1);
-        printf("item is consumed: %d\n",bufferAddr[remAddr[0]]);
+        printf("Item is consumed: %d\n",bufferAddr[remAddr[0]]);
         remAddr[0]= (remAddr[0]+1)%BUFFER_SIZE;
         numAddr[0]-=1;
-        printf("AddIndex: %d, RemoveIndex: %d, numIndex: %d\n",addAddr[0],remAddr[0],numAddr[0]);
+        printf("Add index: %d, Remove index: %d, Array num: %d\n",addAddr[0],remAddr[0],numAddr[0]);
         up(mutex);
         up(empty);
         sleep(3);
     }
-
     return 0;
 }
