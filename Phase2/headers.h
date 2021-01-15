@@ -168,8 +168,6 @@ struct process * pop(Queue * q)
 } 
 struct process * popReady(Queue * q, int size)
 {   
-    if(size > q->head->memory)
-        return NULL;
     struct process * temp = q->head;
     struct process * previous = NULL; 
     while((temp->next != NULL) && (temp->memory > size))
@@ -177,6 +175,8 @@ struct process * popReady(Queue * q, int size)
         previous = temp;
         temp = temp->next;   
     }
+    if(temp->memory > size)
+        return NULL;
     if(previous == NULL)
     {
         q->head = q->head->next;
@@ -331,7 +331,7 @@ struct sector * newSector(struct sector * p)
     struct sector * temp = (struct sector *)malloc(sizeof(struct sector)); 
     temp->s = p->s;
     temp->e = p->e;
-    temp->next = NULL;
+    temp->next = p->next;
     
     return temp; 
 }

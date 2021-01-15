@@ -155,7 +155,7 @@ void HPF(FILE *fptr, FILE * m)
 
 void SRTN(FILE *fptr, FILE * m)
 {
-    int startTime = -1, currentRemaining = -1, lastUpdate = 0;
+    int startTime = -1, currentRemaining = -1, lastUpdate = 0, size = 0;
     struct process * CurrentProcess;
     while(!finished || (Processes.head != NULL))
     {
@@ -175,14 +175,15 @@ void SRTN(FILE *fptr, FILE * m)
                     waitpid(CurrentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
                     writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
-                    int size = deallocate(memory, CurrentProcess->Sector);
+                    size = deallocate(memory, CurrentProcess->Sector);
                     writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
                     free(CurrentProcess);
                     if(ReadyQueue.head == NULL)
+                        pop_SRTN:
                         CurrentProcess = pop(&Processes);
                     else
                     {
-                        CurrentProcess = popReady(&Processes, size);
+                        CurrentProcess = popReady(&ReadyQueue, size);
                         if(CurrentProcess == NULL)
                             CurrentProcess = pop(&Processes);
                     }
@@ -224,6 +225,7 @@ void SRTN(FILE *fptr, FILE * m)
                     else
                     {
                         push(&ReadyQueue, CurrentProcess, 4);
+                        goto pop_SRTN;
                     }
                 }
                 else
@@ -272,7 +274,7 @@ void SRTN(FILE *fptr, FILE * m)
 
 void RR(int Quantum,FILE *fptr, FILE * m)
 {
-    int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1, size = 300;
+    int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1, size = 0;
     struct process * CurrentProcess = NULL;
     while(!finished || (Processes.head != NULL))
     {
@@ -299,10 +301,11 @@ void RR(int Quantum,FILE *fptr, FILE * m)
                     free(CurrentProcess);
                 }
                 if(ReadyQueue.head == NULL)
+                    pop_RR:
                     CurrentProcess = pop(&Processes);
                 else
                 {
-                    CurrentProcess = popReady(&Processes, size);
+                    CurrentProcess = popReady(&ReadyQueue, size);
                     if(CurrentProcess == NULL)
                         CurrentProcess = pop(&Processes);
                 }
@@ -330,6 +333,7 @@ void RR(int Quantum,FILE *fptr, FILE * m)
                     else
                     {
                         push(&ReadyQueue, CurrentProcess, 4);
+                        goto pop_RR;
                     }
                 }
                 else

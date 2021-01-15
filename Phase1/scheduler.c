@@ -219,14 +219,13 @@ void SRTN(FILE *fptr)
                 {
                     startTime = getClk();
                     currentRemaining = CurrentProcess->RemainingTime;
-                    if(CurrentProcess->processId != -1) 
-                    {
-                        kill(CurrentProcess->processId, SIGCONT);
-                        Wasted+=getClk()-LastFinish;
-                        writeLogs(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                        // fprintf(stderr,"Process with id %d has resumed at %d \n=======\n", CurrentProcess->Id, getClk());
-                         //fflush(stdout);
-                    }
+                    
+                    kill(CurrentProcess->processId, SIGCONT);
+                    Wasted+=getClk()-LastFinish;
+                    writeLogs(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                    // fprintf(stderr,"Process with id %d has resumed at %d \n=======\n", CurrentProcess->Id, getClk());
+                        //fflush(stdout);
+                    
                 }
                 
             }
