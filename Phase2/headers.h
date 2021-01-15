@@ -455,6 +455,8 @@ struct sector * allocate(Memory * m, int size)
     int real_size = nextPowerOf2(size);
 
     int index = (log(real_size) / log(2)) - 3 ;
+    if(index < 0)
+        index = 0;
     while((index < 6) && (m->head[index]->head == NULL))
         index++;
     if(index == 6)
