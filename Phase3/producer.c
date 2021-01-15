@@ -14,6 +14,9 @@
 
 #define BUFFER_SIZE 10
 
+// Globals
+int mutex,full,empty,bufferID,addID,remID,numID;
+
 // Semaphores Struct and functions
 union Semun
 {
@@ -53,16 +56,52 @@ void up(int sem)
         exit(-1);
     }
 }
+void handler(int sigNum){
+    FILE *fptr;
+    fptr = fopen("counter.txt","r+");
+    int num;
+    fscanf(fptr,"%d",&num);
+    num--;
+    if(num == 0){
+        // Shared memory
+        shmctl(bufferID, IPC_RMID, (struct shmid_ds *)0);
+        shmctl(addID, IPC_RMID, (struct shmid_ds *)0);
+        shmctl(remID, IPC_RMID, (struct shmid_ds *)0);
+        shmctl(numID, IPC_RMID, (struct shmid_ds *)0);
+        // Semphores
+        semctl(mutex,0,IPC_RMID,NULL);
+        semctl(full,0,IPC_RMID,NULL);
+        semctl(empty,0,IPC_RMID,NULL);
+    }else{
+        fprintf(fptr,"%d",num);
+    }
+    kill(getpid(),SIGKILL);
+}
 
 int main(){
+    signal(SIGINT,handler);
+    // First check in the counter text by adding one to the value 
+    FILE *fptr;
+    fptr = fopen("counter.txt","r");
+    if( fptr != NULL){
+        int num;
+        fscanf(fptr,"%d",&num);
+        fptr = fopen("counter.txt","w+");
+        num++;
+        fprintf(fptr,"%d",num);
+    }else{
+        fptr = fopen("counter.txt","a");
+        fprintf(fptr,"%d",1);
+    }
+    fclose(fptr);
     // Create the initialization shared memory and semaphores
     key_t key_id;
     key_id = ftok("keyfile", 65);
     union Semun semun;
     // Semaphores
-    int mutex = semget(key_id,1,0666 | IPC_CREAT);
-    int full = semget(key_id+10,1,0666 | IPC_CREAT);
-    int empty = semget(key_id+20,1,0666 | IPC_CREAT);
+    mutex = semget(key_id,1,0666 | IPC_CREAT);
+    full = semget(key_id+10,1,0666 | IPC_CREAT);
+    empty = semget(key_id+20,1,0666 | IPC_CREAT);
     printf("the mutexID: %d, the fullID: %d, the emptyID: %d \n",mutex,full,empty);
     if (mutex == -1 || full == -1 || empty == -1)
     {
@@ -70,7 +109,6 @@ int main(){
         exit(-1);
     }
     // intialize the semaphores
-    FILE *fptr;
     fptr = fopen("init.txt","r");
     if(fptr == NULL){
         fptr = fopen("init.txt","a+");
@@ -95,10 +133,10 @@ int main(){
     }
     fclose(fptr);
     // Shared memory 
-    int bufferID = shmget(key_id,sizeof(int)*BUFFER_SIZE,0666 | IPC_CREAT);
-    int addID = shmget(key_id+10,sizeof(int),0666 | IPC_CREAT);
-    int remID = shmget(key_id+20,sizeof(int),0666 | IPC_CREAT);
-    int numID = shmget(key_id+30,sizeof(int),0666 | IPC_CREAT);
+    bufferID = shmget(key_id,sizeof(int)*BUFFER_SIZE,0666 | IPC_CREAT);
+    addID = shmget(key_id+10,sizeof(int),0666 | IPC_CREAT);
+    remID = shmget(key_id+20,sizeof(int),0666 | IPC_CREAT);
+    numID = shmget(key_id+30,sizeof(int),0666 | IPC_CREAT);
     if (bufferID == -1 || addID == -1 || remID == -1 || numID == -1)
     {
         perror("Error in create the shared memory");
@@ -115,6 +153,7 @@ int main(){
     // bufferAddr[2] = 2;
 
     // Main loop for the producer
+    // TODO:: input is different from producer to another
     int input = 1;
     printf("Enter the Producer loop\n");
     while(1){
