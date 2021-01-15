@@ -35,6 +35,11 @@ struct msgbuffer
     int Id;
 };
 
+struct remain
+{
+    int remainig;
+};
+
 struct process
 {
     int processId;
