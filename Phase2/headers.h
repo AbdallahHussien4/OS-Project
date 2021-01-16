@@ -36,11 +36,28 @@ struct msgbuffer
     int Id;
 };
 
+// used to send the remaining time to the process
 struct remain
 {
     int remainig;
 };
 
+// struct used to keep track of the process information
+//      - processId  ===> after forking the process we save the pid in this variable 
+//                      so we could send signals to the running process
+//      - lastTime  ===> helds the last time the process has started and stopped
+//                     initially has the arrival time of the process 
+//                     used to calculate the waiting time of the process
+//      - arrivalTime  ===> helds the clock at which the procces has arrived
+//      - runTime  ===> helds the total time needed by the process to terminate
+//      - priority  ===> process' priority
+//      - id  ===> id reffers to the id of the process in process.txt 
+//      - waitingTime  ===> helds the total waiting time of the process
+//      - remainingTime  ===> an attribute to check if the process had finished or not
+//                          initially it is equal to the running time 
+//      - next  ===> pointer to the next process in the queue whether in Ready Queue or Waiting Queue
+//      - memory  ===> the memory size of the process 
+//      - sector  ===> the range poninter in the memory
 struct process
 {
     int processId;
@@ -56,6 +73,10 @@ struct process
     struct sector * Sector;
 };
 
+// struct used to keep track of the process information
+//      - s  ===> start range of the sector
+//      - e  ===> end range of the sector
+//      - next  ===> next sector in the memory
 struct sector
 {
     short s;
@@ -112,6 +133,10 @@ void destroyClk(bool terminateAll)
 // ===============================================
 // =============== Priority Queue ================
 // ===============================================
+
+// struct used to represent the Ready Queue or Waiting Queue
+//      - head  ==> pointer to the first process int the queue
+//                  initially equals to NULL
 struct Queue{
     struct process * head;
     long size;
@@ -127,6 +152,11 @@ Queue * initQueue()
     return q;
 }
 
+// funtion to create a new process to be inserted in the queue
+// arguments:
+//          - p  ==> pointer to a process to get copy of
+// returns: 
+//          - temp  ==> pointer to the copy proces
 struct process * newNode(struct process * p) 
 { 
     struct process * temp = (struct process *)malloc(sizeof(struct process)); 
@@ -144,6 +174,7 @@ struct process * newNode(struct process * p)
     return temp; 
 }
 
+// utility function to print the queue
 void printQueue(Queue * q){
     struct process* start = (q->head); 
     if(start == NULL)
@@ -159,13 +190,21 @@ void printQueue(Queue * q){
     return;
 };
 
-
+// arguments: 
+//          - q  ==> Queue to popped from
+// returns:
+//          - temp ==> process pointer to the first process in the queue
 struct process * pop(Queue * q) 
 { 
     struct process * temp = q->head; 
     q->head = q->head->next; 
     return temp; 
 } 
+// arguments: 
+//          - q  ==> Queue to popped from
+//          - s  ==> size of the memory freed to pop if the ready is equal or less than it
+// returns:
+//          - temp ==> process pointer to the first process in the queue
 struct process * popReady(Queue * q, int size)
 {   
     struct process * temp = q->head;
@@ -188,6 +227,14 @@ struct process * popReady(Queue * q, int size)
     return temp;
 }
 
+// arguments: 
+//          - q  ==> Queue to pushed in
+//          - p  ==> process to be pushed
+//          - Algorithm  ==> integer indicating the type of the queue
+//                           1 priority queue based on process' priority
+//                           2 priority queue based on process' remaining time
+//                           3 normal queue
+//                           other normal queue
 void push(Queue * q, struct process * p, int Algorithm) 
 { 
     struct process* start = (q->head); 
@@ -271,12 +318,22 @@ typedef struct {
   size_t size;
 } Array;
 
+// utility function to initialise the size of the array
+// and force the " used " attribute to be 0
+// arguments:
+//         - a ==> pointer to the array
+//         - initialSize ==> desired size
 void initArray(Array *a, size_t initialSize) {
   a->array = malloc(initialSize * sizeof(float));
   a->used = 0;
   a->size = initialSize;
 }
 
+// utility function to insert an elemenet to the array
+// and check if the array is fulll it doubles the size
+// arguments:
+//         - a ==> pointer to the array
+//         - element ==> element to be inserted
 void insertArray(Array *a, float element) {
   // a->used is the number of used entries, because a->array[a->used++] updates a->used only after the array has been accessed.
   // Therefore a->used can go up to a->size 
@@ -287,6 +344,9 @@ void insertArray(Array *a, float element) {
   a->array[a->used++] = element;
 }
 
+// utility function to free the array
+// arguments:
+//         - a ==> pointer to the array
 void freeArray(Array *a) {
   free(a->array);
   a->array = NULL;
@@ -298,6 +358,11 @@ void freeArray(Array *a) {
 // ===============================================
 // ==================== MEMORY ===================
 // ===============================================
+
+// arguments:
+//          - n ==> the integer number desired to get the nerest 2^n
+// return:
+//          - 1 shifted with count =>> as it will return the number from binary 2^n 
 int nextPowerOf2(unsigned int n) 
 { 
     unsigned count = 0; 
@@ -312,12 +377,14 @@ int nextPowerOf2(unsigned int n)
     
     return 1 << count; 
 } 
+// Struct for the Memory Empty sectors
 struct MemoryQueue{
     struct sector * head;
     long size;
 };
 
 typedef struct MemoryQueue MemoryQueue;
+// initialize the memory queue
 MemoryQueue * initMemoryQ()
 {
     MemoryQueue * q = (MemoryQueue *)malloc(sizeof(MemoryQueue));
@@ -326,6 +393,7 @@ MemoryQueue * initMemoryQ()
     return q;
 }
 
+// Create new sector initialization
 struct sector * newSector(struct sector * p) 
 { 
     struct sector * temp = (struct sector *)malloc(sizeof(struct sector)); 
@@ -336,6 +404,7 @@ struct sector * newSector(struct sector * p)
     return temp; 
 }
 
+// Print the sector Queue
 void printSector(MemoryQueue * q){
     struct sector* start = (q->head); 
     if(start == NULL)
@@ -351,6 +420,10 @@ void printSector(MemoryQueue * q){
     return;
 };
 
+// arguments:
+//          - q ==> memory queue
+// return:
+//          - the poped sector pointer
 struct sector * popSector(MemoryQueue * q) 
 { 
     struct sector * temp = q->head; 
@@ -358,6 +431,12 @@ struct sector * popSector(MemoryQueue * q)
     return temp; 
 } 
 
+// arguments:
+//          - q ==> the memory queue to push(allocate) the process in it 
+//          - p ==> the sector taken by the process
+//          - merge ==> if 2 sectors are empty and can merge into there sum 
+// return:
+//          - pointer to the location in memory
 struct sector * pushSector(MemoryQueue * q, struct sector * p, bool merge) 
 { 
     struct sector* start = (q->head);
@@ -420,13 +499,13 @@ struct sector * pushSector(MemoryQueue * q, struct sector * p, bool merge)
     return NULL;
 }
 
-
+// Memory struct with head array of sizes where size (8 -> 256)
 struct Memory{
     struct MemoryQueue * head[6];
 };
 
 typedef struct Memory Memory;
-
+// Intialize the memory
 Memory * initMemory()
 {
     Memory * q = (Memory *)malloc(sizeof(Memory));
@@ -449,7 +528,11 @@ Memory * initMemory()
 
     return q;
 }
-
+// arguments:
+//          - m ==> the memory of the schedular
+//          - size ==> size of the sector to take it to the process
+// return:
+//          - s ==> pointer to the sector
 struct sector * allocate(Memory * m, int size)
 {
     int real_size = nextPowerOf2(size);
@@ -474,7 +557,11 @@ struct sector * allocate(Memory * m, int size)
     }
     return s;
 }
-
+// arguments:
+//          - m ==> the memory of the schedular
+//          - s ==> the sector taken by process to be freed
+// return:
+//          - the size of the freed memory sector
 int deallocate(Memory * m, struct sector *s)
 {   
     int index = (log(s->e + 1 - s->s) / log(2)) - 3 ;
