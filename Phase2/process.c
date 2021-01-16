@@ -18,7 +18,6 @@ int main(int agrc, char * argv[])
         fprintf(stderr, "process remain %d \n", remainingtime);
         msgrcv(msgq, &message, sizeof(message.remainig), 0, !IPC_NOWAIT);
         remainingtime = message.remainig;
-        // fprintf(stderr, "process %d \n", remainingtime);
     }
     fprintf(stderr, "process with pid %d has finished \n", getpid());
     int clk = getClk();
