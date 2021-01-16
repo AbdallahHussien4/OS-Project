@@ -218,7 +218,6 @@ void SRTN(FILE *fptr)
                         snprintf(number, sizeof(number), "%d", currentProcess->remainingTime);
                         execl("process.out", "process.out", number, NULL);
                     }
-                    fprintf(stderr, "process %d with pid %d has started \n", currentProcess->id, currentProcess->processId);
                 }else   //if it was stopped resume it
                 {
                     startTime = getClk();

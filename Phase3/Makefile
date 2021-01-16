@@ -7,8 +7,11 @@ clean:
 
 all: clean build kill
 
-run:
+producer:
 	./producer.out
+
+consumer:
+	./consumer.out
 
 kill:
 	ipcrm -a

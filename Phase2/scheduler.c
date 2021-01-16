@@ -400,7 +400,7 @@ void RR(int Quantum,FILE *fptr, FILE * m)
         }
     }
     //for the last process
-    while(currentRemaining || (getClk() - lastUpdate > 0))
+    while(currentRemaining > 0 || (getClk() - lastUpdate > 0))
     {
         if(getClk() - lastUpdate > 0)
         {
