@@ -1,20 +1,27 @@
 #include "headers.h"
 
-
+// signal handler to clear the resources
 void clearResources(int);
+
+int msgq_id, schedulerPid, clkPid, stat_loc;
+
+// boolean to indicate whether the signal is sent due to termination of the scheduler
+// or it's an interrupt from the keyboard
+bool interrupt = true;
 
 int main(int argc, char * argv[])
 {
     signal(SIGINT, clearResources);
     
-    // TODO Initialization
-
-    // 1. Read the input files.
     struct process arr[100000];
     FILE * file_pointer;
     file_pointer = fopen("processes.txt", "r");
+
+    // read the first line and discard it
     char str1[3], str2[7], str3[7], str4[8],  str5[8];
     fscanf(file_pointer, "%s %s %s %s %s", str1, str2, str3, str4, str5);
+
+    // loop to read the processes
     int p_num=0;
     while(1){
         long id,arrival,runt,p, memory;
@@ -30,7 +37,7 @@ int main(int argc, char * argv[])
         else break;
     }
 
-    // 2. Ask the user for the chosen scheduling algorithm and its parameters, if there are any.
+    // let the user to choose the algorithm
     char ch, Q[2];
     printf("Choose scheduler algorithm \n");
     printf("1 for HPF \n");
@@ -40,10 +47,12 @@ int main(int argc, char * argv[])
     
     if(ch=='3')
     {
+        // let the user to choose Quantum if the algorithm is RR
         printf("Please enter your Quantum : \n");
         scanf("%s", Q);
     }
-    // 3. Initiate and create the scheduler and clock processes.
+
+    // loop to fork the scheduler and the clk 
     int pid;
     for(int i = 0; i < 2; i++)
     {
@@ -58,16 +67,17 @@ int main(int argc, char * argv[])
             else
                 execl("scheduler.out", "scheduler.out", &ch, &Q, NULL);    
         }
+        // save the scheduler and clk ids
+        if(!i)
+            clkPid = pid;
+        else
+            schedulerPid = pid;
     }
-    // 4. Use this function after creating the clock process to initialize clock
     initClk();
-    
-    // TODO Generation Main Loop
-    // 5. Create a data structure for processes and provide it with its parameters.
-    // 6. Send the information to the scheduler at the appropriate time.
 
+    
     key_t key_id;
-    int msgq_id, send_val;
+    int send_val;
 
     key_id = ftok("gen_schdlr_com", 65);
     msgq_id = msgget(key_id, 0666 | IPC_CREAT);
@@ -77,13 +87,14 @@ int main(int argc, char * argv[])
         perror("Error in create");
         exit(-1);
     }
-    //printf("Message Queue ID = %d\n", msgq_id);
 
     struct msgbuffer message;
 
     int Iterator=0;
     long CurrentClk=-1;
     bool flag;
+
+    // loop to send the processes to the scheduler at the correct clk using a msg queue
     while(Iterator<p_num)
     {
         flag = false;
@@ -112,22 +123,34 @@ int main(int argc, char * argv[])
                     break;
                 }
             }
+            // send signal to the scheduler to receive the sent processes
             if(flag)
                 {
                 	kill(pid, SIGUSR1);
         	 }
         }
     }
+    // delay to let the scheduler receive the sent processes
     sleep(2);
+
+    // send signal to scheduler to inform that we've finished
     kill(pid, SIGUSR2);
-    int stat_loc;
+
+    // wait for the scheduler to terminate
     waitpid(pid, &stat_loc, 0);
-    // 7. Clear clock resourced
+    
+    // de-attaching the clk and terminating all the other processes
+    interrupt = false;
     destroyClk(true);
 }
 
 void clearResources(int signum)
 {
-    //msgctl(signum, IPC_RMID, (struct msqid_ds *)0);
-    //TODO Clears all resources in case of interruption
+    msgctl(msgq_id, IPC_RMID, (struct msqid_ds *)0);
+    if(interrupt)
+    {
+        kill(schedulerPid, SIGINT);
+        kill(clkPid, SIGINT);
+        waitpid(schedulerPid, &stat_loc, 0);
+    }
 }
