@@ -16,6 +16,7 @@ bool finished = false;
 float TWT=0,TTA=0,TWTA=0,Wasted=0,ProcessesNum=0;
 double STD=0;
 struct remain message;
+
 int main(int argc, char * argv[])
 {
 	
@@ -34,11 +35,10 @@ int main(int argc, char * argv[])
 
     Algorithm = atoi(argv[1]);
     printf("Algorithm Number is %d\n",Algorithm);
+
     initClk();
     initArray(&Wt,5);
     key_t key_id;
-    
-
     key_id = ftok("gen_schdlr_com", 65);               
     msgq_id = msgget(key_id, 0666 | IPC_CREAT); 
     msgq = msgget(60, 0666 | IPC_CREAT); 
@@ -60,7 +60,6 @@ int main(int argc, char * argv[])
             RR(atoi(argv[2]),fptr);
             break;
     }
-
 
     writeStatus(fptr2,(LastFinish-Wasted)*100/LastFinish,TWTA/ProcessesNum , TWT/ProcessesNum);
     freeArray(&Wt);
@@ -100,6 +99,7 @@ void receiveProcess(int signum){
             receivedProcess.waitingTime = 0;
             receivedProcess.remainingTime = message.runTime;
             receivedProcess.next = NULL;
+            //Push on Ready Queue
             push(&readyQueue, &receivedProcess, Algorithm);
         }
     } while(rec_val!=-1);
@@ -118,9 +118,10 @@ void lastProcess(int signum){
 
 void HPF(FILE *fptr)
 {
-
+    //Check if there is another coming process
 	while(!finished || (readyQueue.head != NULL))
     {
+        //check if there is process now ?? pop and fork it
         if(readyQueue.head != NULL)
         {
             struct process * currentProcess = pop(&readyQueue);
@@ -133,19 +134,20 @@ void HPF(FILE *fptr)
                 snprintf(number, sizeof(number), "%d", currentProcess->remainingTime);
                 execl("process.out", "process.out", number, NULL);
             }
-            Wasted+=getClk()-LastFinish;
+            Wasted+=getClk()-LastFinish;    //wasted time between switching to Calc utilization.
             writeLogs(fptr,getClk(),currentProcess->id,"started",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
-            int last = getClk();
+            int last = getClk();    
+            //check if the process finished
             while(currentProcess->remainingTime > 0)
             {   
                 if(getClk() - last >0)
                 {
                     last = getClk();
                     message.remainig = --(currentProcess->remainingTime);
-                    msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
+                    msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);  //send new remaining time to the process
                 }
             }
-            waitpid(pid, &stat_loc, 0);
+            waitpid(pid, &stat_loc, 0);     //receive exit code from process to free it
             LastFinish=stat_loc>>8;
             writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
             free(currentProcess);
@@ -162,13 +164,18 @@ void SRTN(FILE *fptr)
 {
     int startTime = -1, currentRemaining = -1, lastUpdate = 0;
     struct process * currentProcess;
+    //Check if there is another coming process
     while(!finished || (readyQueue.head != NULL))
     {
+        //check if there is process now ?? pop and fork it
         if(readyQueue.head != NULL)
         {
-        	
+        	//Check to pop a new process in case it's the first one 
+            //OR a process with less remaining time arrives 
+            //OR the current process finished
             if((startTime == -1) || (currentRemaining > readyQueue.head->remainingTime) || (!currentRemaining))
             {
+                //it's the first one pop it.
                 if(startTime == -1)
                 {
                     currentProcess = pop(&readyQueue);
@@ -176,7 +183,7 @@ void SRTN(FILE *fptr)
                     lastUpdate = getClk();
                     currentRemaining = currentProcess->remainingTime;
                 }
-                else if(!currentRemaining){
+                else if(!currentRemaining){     //Current process finished free it and pop new one to run.
                     waitpid(currentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
                     writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
@@ -186,7 +193,7 @@ void SRTN(FILE *fptr)
                     currentProcess->waitingTime += (getClk() - currentProcess->lastTime);
       
                 }
-                else
+                else    //Shorter process arrived so Stop the current and pop the shortest. 
                 {
                     kill(currentProcess->processId, SIGSTOP);
                     LastFinish=getClk();
@@ -198,7 +205,7 @@ void SRTN(FILE *fptr)
                     currentProcess = pop(&readyQueue);
                     currentProcess->waitingTime +=(getClk() - currentProcess->lastTime);
                 }
-                if(currentProcess->processId == -1)
+                if(currentProcess->processId == -1)     //check if the popped procees is new (Not stopped)
                 {
                     pid = fork();
                     currentProcess->processId = pid;
@@ -212,7 +219,7 @@ void SRTN(FILE *fptr)
                         execl("process.out", "process.out", number, NULL);
                     }
                     fprintf(stderr, "process %d with pid %d has started \n", currentProcess->id, currentProcess->processId);
-                }else
+                }else   //if it was stopped resume it
                 {
                     startTime = getClk();
                     currentRemaining = currentProcess->remainingTime;
@@ -224,14 +231,15 @@ void SRTN(FILE *fptr)
                 
             }
         }
-        if(currentProcess && (getClk() - lastUpdate > 0))
+        if(currentProcess && (getClk() - lastUpdate > 0))   //Update the remainig time of current runnig process
         {
             currentRemaining -= (getClk() - lastUpdate);
             lastUpdate = getClk();
             message.remainig = currentRemaining;
-            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
+            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);      //send the new remaining time
         }
     }
+    //for the last process run.
     while(currentRemaining || (getClk() - lastUpdate > 0))
     {
         if(getClk() - lastUpdate > 0)
@@ -257,12 +265,17 @@ void RR(int Quantum,FILE *fptr)
 {
     int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1;
     struct process * currentProcess = NULL;
+    //Check if there is another coming process
     while(!finished || (readyQueue.head != NULL))
     {
+        //check if there is process now ?? pop and fork it
         if(readyQueue.head != NULL)
         {
+            //Check to pop a new process in case the current one finished 
+            //OR it finished its quantum 
             if(((currentRuning >= Quantum)) || (currentRemaining <= 0))
             {
+                //it finished its quantum so stop it and pop a new one
                 if(currentProcess && (currentRemaining > 0))  
                 {
                     kill(currentProcess->processId, SIGSTOP);
@@ -272,6 +285,7 @@ void RR(int Quantum,FILE *fptr)
                     writeLogs(fptr,getClk(),currentProcess->id,"stopped",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
                     push(&readyQueue, currentProcess, Algorithm);
                 }
+                //the current process finished so free it and pop another one
                 if(currentRemaining <= 0)
                 {
                     waitpid(currentProcess->processId, &stat_loc, 0);
@@ -283,7 +297,7 @@ void RR(int Quantum,FILE *fptr)
                 currentRemaining = currentProcess->remainingTime;
                 currentProcess->waitingTime += (getClk() - currentProcess->lastTime);
                 currentRuning = 0;
-                if(currentProcess->processId == -1)
+                if(currentProcess->processId == -1)     //check if it's new or stopped process
                 {
                     pid = fork();
                     if(pid == 0)
@@ -296,7 +310,7 @@ void RR(int Quantum,FILE *fptr)
                     writeLogs(fptr,getClk(),currentProcess->id,"started",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
                     currentProcess->processId = pid;
                 }
-                else
+                else    //it was stopped so resume it
                 {
                     kill(currentProcess->processId, SIGCONT);
                     Wasted+=getClk()-LastFinish;
@@ -305,10 +319,11 @@ void RR(int Quantum,FILE *fptr)
                 }
             }
         }
+        //Update remaining time of current process
         if((getClk() - lastUpdate > 0) && (currentProcess != NULL))
         {
             int clk = getClk();
-            if(startTime == -1)
+            if(startTime == -1)     //if it's the first one
             {
                 currentRuning += (clk - currentProcess->arrivalTime);
                 startTime = 1;
@@ -319,14 +334,15 @@ void RR(int Quantum,FILE *fptr)
                 currentRemaining -= (clk - lastUpdate);
             }
             lastUpdate = clk;
-            if((readyQueue.head == NULL) && ( currentRuning>= Quantum))
+            if((readyQueue.head == NULL) && ( currentRuning>= Quantum))     //if there is no processes in the queue take another quantum
             {
                 currentRuning = 0;
             }
             message.remainig = currentRemaining;
-            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
+            msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);      //send the new remaining time
         }
     }
+    //for the last process
     while(currentRemaining || (getClk() - lastUpdate > 0))
     {
         if(getClk() - lastUpdate > 0)
