@@ -9,7 +9,7 @@ void writeStatus(FILE *fptr,float util, float avgWTA , float avgW);
 void writeLogs_scheduler(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k);
 void writeLogs_memory(FILE *fptr, int time, int bytes, int process, int start, int end, bool flag);
 int Algorithm, rec_val, stat_loc, msgq_id, pid,LastFinish=0, msgq;
-Queue Processes, ReadyQueue;
+Queue readyQueue, waitingQueue;
 Memory * memory;	
 Array Wt;
 bool finished = false;
@@ -99,9 +99,7 @@ void receiveProcess(int signum){
             receivedProcess.memory = message.memory;
             receivedProcess.next = NULL;
             receivedProcess.Sector = NULL;
-            //TODO ?
-            //Push on Ready Queue
-            push(&Processes, &receivedProcess, Algorithm);
+            push(&readyQueue, &receivedProcess, Algorithm);
         }
     } while(rec_val!=-1);
 }
@@ -120,44 +118,44 @@ void lastProcess(int signum){
 void HPF(FILE *fptr, FILE * m)
 {
     //Check if there is another coming process
-	while(!finished || (Processes.head != NULL))
+	while(!finished || (readyQueue.head != NULL))
     {
         //check if there is process now ?? pop and fork it
-        if(Processes.head != NULL)
+        if(readyQueue.head != NULL)
         {
-            struct process * CurrentProcess = pop(&Processes);
-            CurrentProcess->WaitingTime = getClk() - CurrentProcess->ArrivalTime;
-            CurrentProcess->Sector = allocate(memory, CurrentProcess->memory);
+            struct process * currentProcess = pop(&readyQueue);
+            currentProcess->WaitingTime = getClk() - currentProcess->ArrivalTime;
+            currentProcess->Sector = allocate(memory, currentProcess->memory);
             pid = fork();
             
             if(!pid)
             {
                 char number[6];
-                snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                snprintf(number, sizeof(number), "%d", currentProcess->RemainingTime);
                 execl("process.out", "process.out", number, NULL);
             }
             //wasted time between switching to Calc. utilization.
             Wasted+=getClk()-LastFinish;        
 
-            writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
-            writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+            writeLogs_memory(m, getClk(), currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, true);
+            writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"started",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
             int last = getClk();
             //check if the process finished
-            while(CurrentProcess->RemainingTime > 0)
+            while(currentProcess->RemainingTime > 0)
             {   
                 if(getClk() - last >0)
                 {
                     last = getClk();
-                    message.remainig = --(CurrentProcess->RemainingTime);
+                    message.remainig = --(currentProcess->RemainingTime);
                     msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
                 }
             }
             waitpid(pid, &stat_loc, 0);     //receive exit code from process to free it
             LastFinish=stat_loc>>8;
-            writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
-            writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-            deallocate(memory, CurrentProcess->Sector);
-            free(CurrentProcess);
+            writeLogs_memory(m, LastFinish, currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, false);
+            writeLogs_scheduler(fptr,stat_loc>>8,currentProcess->Id,"finished",currentProcess->ArrivalTime,currentProcess->RunTime,0,currentProcess->WaitingTime);
+            deallocate(memory, currentProcess->Sector);
+            free(currentProcess);
 
         }
     }
@@ -170,100 +168,103 @@ void HPF(FILE *fptr, FILE * m)
 void SRTN(FILE *fptr, FILE * m)
 {
     int startTime = -1, currentRemaining = -1, lastUpdate = 0, size = 0;
-    struct process * CurrentProcess;
+    struct process * currentProcess;
     //Check if there is another coming process
-    while(!finished || (Processes.head != NULL))
+    while(!finished || (readyQueue.head != NULL) || (waitingQueue.head != NULL))
     {
         //check if there is process now ?? pop and fork it
-        if(Processes.head != NULL)
+        if(readyQueue.head != NULL)
         {
             //Check to pop a new process in case it's the first one 
             //OR a process with less remaining time arrives 
             //OR the current process finished
-            if((startTime == -1) || (currentRemaining > Processes.head->RemainingTime) || (!currentRemaining))
+            if((startTime == -1) || (currentRemaining > readyQueue.head->RemainingTime) || (!currentRemaining))
             {
                 //it's the first one pop it.
                 if(startTime == -1)
                 {
-                    CurrentProcess = pop(&Processes);
+                    currentProcess = pop(&readyQueue);
                     startTime = getClk();
                     lastUpdate = getClk();
-                    currentRemaining = CurrentProcess->RemainingTime;
+                    currentRemaining = currentProcess->RemainingTime;
                 }
                 else if(!currentRemaining){         //Current process finished free it and pop new one to run.
-                    waitpid(CurrentProcess->processId, &stat_loc, 0);
+                    waitpid(currentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
-                    writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
-                    size = deallocate(memory, CurrentProcess->Sector);
-                    writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-                    free(CurrentProcess);
-                    if(ReadyQueue.head == NULL)     //check if the waiting queue is empty
+                    writeLogs_memory(m, LastFinish, currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, false);
+                    size = deallocate(memory, currentProcess->Sector);
+                    writeLogs_scheduler(fptr,stat_loc>>8,currentProcess->Id,"finished",currentProcess->ArrivalTime,currentProcess->RunTime,0,currentProcess->WaitingTime);
+                    free(currentProcess);
+                    if(waitingQueue.head == NULL)     //check if the waiting queue is empty
                         pop_SRTN:
-                        //TODO ??
-                        CurrentProcess = pop(&Processes);
+                        currentProcess = pop(&readyQueue);
                     else
                     {
-                        CurrentProcess = popReady(&ReadyQueue, size);
-                        if(CurrentProcess == NULL)
-                            CurrentProcess = pop(&Processes);
+                        currentProcess = popReady(&waitingQueue, size);
+                        if(currentProcess == NULL)
+                            currentProcess = pop(&readyQueue);
+                        else if(currentProcess->RemainingTime > readyQueue.head->RemainingTime)
+                        {
+                            push(&waitingQueue, currentProcess, 2);
+                            currentProcess = pop(&readyQueue);
+                        }
                     }
                     
-                    CurrentProcess->WaitingTime += (getClk() - CurrentProcess->lastTime);
+                    currentProcess->WaitingTime += (getClk() - currentProcess->lastTime);
       
                 }
                 else        //Shorter process arrived so Stop the current and pop the shortest. 
                 {
-                    kill(CurrentProcess->processId, SIGSTOP);
+                    kill(currentProcess->processId, SIGSTOP);
                     LastFinish=getClk();
-                    CurrentProcess->RemainingTime = currentRemaining;
-                    CurrentProcess->lastTime = getClk();
+                    currentProcess->RemainingTime = currentRemaining;
+                    currentProcess->lastTime = getClk();
                   
-                    push(&Processes, CurrentProcess, Algorithm);
-                    writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"stopped",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    CurrentProcess = pop(&Processes);
-                    CurrentProcess->WaitingTime +=(getClk() - CurrentProcess->lastTime);
+                    push(&readyQueue, currentProcess, Algorithm);
+                    writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"stopped",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
+                    currentProcess = pop(&readyQueue);
+                    currentProcess->WaitingTime +=(getClk() - currentProcess->lastTime);
                 }
-                if(CurrentProcess->processId == -1)     //check if the popped procees is new (Not stopped)
+                if(currentProcess->processId == -1)     //check if the popped procees is new (Not stopped)
                 {
                     //try to allocate if you can't push it in the waited queue.
-                    CurrentProcess->Sector = allocate(memory,CurrentProcess->memory);
-                    if(CurrentProcess->Sector)
+                    currentProcess->Sector = allocate(memory,currentProcess->memory);
+                    if(currentProcess->Sector)
                     {   
                         pid = fork();
-                        CurrentProcess->processId = pid;
-                        // if(LastFinish!=0)
+                        currentProcess->processId = pid;
                         Wasted+=getClk()-LastFinish;
-                        writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
-                        writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                        writeLogs_memory(m, getClk(), currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, true);
+                        writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"started",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
                         if(!pid)
                         {
                             char number[6];
-                            snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                            snprintf(number, sizeof(number), "%d", currentProcess->RemainingTime);
                             execl("process.out", "process.out", number, NULL);
                         }
-                        currentRemaining = CurrentProcess->RemainingTime;
+                        currentRemaining = currentProcess->RemainingTime;
                     }
                     else
                     {
-                        push(&ReadyQueue, CurrentProcess, 4);
+                        push(&waitingQueue, currentProcess, 2);
                         goto pop_SRTN;
                     }
                 }
                 else        //if it was stopped resume it
                 {
                     startTime = getClk();
-                    currentRemaining = CurrentProcess->RemainingTime;
+                    currentRemaining = currentProcess->RemainingTime;
                     
-                    kill(CurrentProcess->processId, SIGCONT);
+                    kill(currentProcess->processId, SIGCONT);
                     Wasted+=getClk()-LastFinish;
-                    writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                    writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"resumed",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
                     
                 }
                 
             }
         }
          //Update the remainig time of current runnig process
-        if(CurrentProcess && (getClk() - lastUpdate > 0))
+        if(currentProcess && (getClk() - lastUpdate > 0))
         {
             currentRemaining -= (getClk() - lastUpdate);
             lastUpdate = getClk();
@@ -272,7 +273,7 @@ void SRTN(FILE *fptr, FILE * m)
         }
     }
     //for the last process run.
-    while(currentRemaining || (getClk() - lastUpdate > 0))
+    while(currentRemaining > 0 || (getClk() - lastUpdate > 0))
     {
         if(getClk() - lastUpdate > 0)
         {
@@ -282,11 +283,11 @@ void SRTN(FILE *fptr, FILE * m)
             msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
         }
     }
-    waitpid(CurrentProcess->processId, &stat_loc, 0);
+    waitpid(currentProcess->processId, &stat_loc, 0);
     LastFinish=stat_loc>>8;
-    writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
-    writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-    free(CurrentProcess);
+    writeLogs_memory(m, LastFinish, currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, false);
+    writeLogs_scheduler(fptr,stat_loc>>8,currentProcess->Id,"finished",currentProcess->ArrivalTime,currentProcess->RunTime,0,currentProcess->WaitingTime);
+    free(currentProcess);
 }
 
 
@@ -297,91 +298,91 @@ void SRTN(FILE *fptr, FILE * m)
 void RR(int Quantum,FILE *fptr, FILE * m)
 {
     int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1, size = 0;
-    struct process * CurrentProcess = NULL;
+    struct process * currentProcess = NULL;
     //Check if there is another coming process
-    while(!finished || (Processes.head != NULL))
+    while(!finished || (readyQueue.head != NULL) || (waitingQueue.head != NULL))
     {
         //check if there is process now ?? pop and fork it
-        if(Processes.head != NULL)
+        if(readyQueue.head != NULL)
         {
             //Check to pop a new process in case the current one finished 
             //OR it finished its quantum 
             if(((currentRuning >= Quantum)) || (currentRemaining <= 0))
             {
                 //it finished its quantum so stop it and pop a new one
-                if(CurrentProcess && (currentRemaining > 0))  
+                if(currentProcess && (currentRemaining > 0))  
                 {
-                    kill(CurrentProcess->processId, SIGSTOP);
+                    kill(currentProcess->processId, SIGSTOP);
                     LastFinish=getClk();
-                    CurrentProcess->RemainingTime = currentRemaining;
-                    CurrentProcess->lastTime = getClk();
-                    writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"stopped",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    push(&Processes, CurrentProcess, Algorithm);
+                    currentProcess->RemainingTime = currentRemaining;
+                    currentProcess->lastTime = getClk();
+                    writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"stopped",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
+                    push(&readyQueue, currentProcess, Algorithm);
                 }
                 //the current process finished so free it and pop another one
                 if(currentRemaining <= 0)
                 {
-                    waitpid(CurrentProcess->processId, &stat_loc, 0);
+                    waitpid(currentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
-                    writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
-                    size = deallocate(memory, CurrentProcess->Sector);
-                    writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-                    free(CurrentProcess);
+                    writeLogs_memory(m, LastFinish, currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, false);
+                    size = deallocate(memory, currentProcess->Sector);
+                    writeLogs_scheduler(fptr,stat_loc>>8,currentProcess->Id,"finished",currentProcess->ArrivalTime,currentProcess->RunTime,0,currentProcess->WaitingTime);
+                    free(currentProcess);
                 }
                 //check if the waiting queue is empty
-                if(ReadyQueue.head == NULL)
+                if(waitingQueue.head == NULL)
                     pop_RR:
-                    CurrentProcess = pop(&Processes);
+                    currentProcess = pop(&readyQueue);
                 else
                 {
-                    CurrentProcess = popReady(&ReadyQueue, size);
-                    if(CurrentProcess == NULL)
-                        CurrentProcess = pop(&Processes);
+                    currentProcess = popReady(&waitingQueue, size);
+                    if(currentProcess == NULL)
+                        currentProcess = pop(&readyQueue);
                 }
-                currentRemaining = CurrentProcess->RemainingTime;
-                CurrentProcess->WaitingTime += (getClk() - CurrentProcess->lastTime);
+                currentRemaining = currentProcess->RemainingTime;
+                currentProcess->WaitingTime += (getClk() - currentProcess->lastTime);
                 currentRuning = 0;
                 //check if it's new or stopped process
-                if(CurrentProcess->processId == -1)
+                if(currentProcess->processId == -1)
                 {
                     //try to allocate if you can't push it in the waited queue.
-                    CurrentProcess->Sector = allocate(memory,CurrentProcess->memory);
-                    if(CurrentProcess->Sector)
+                    currentProcess->Sector = allocate(memory,currentProcess->memory);
+                    if(currentProcess->Sector)
                     { 
                         pid = fork();
                         if(pid == 0)
                         {
                             char number[6];
-                            snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                            snprintf(number, sizeof(number), "%d", currentProcess->RemainingTime);
                             execl("process.out", "process.out", number, NULL);
                         }
                         Wasted+=getClk()-LastFinish;
-                        writeLogs_memory(m, getClk(), CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, true);
-                        writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                        CurrentProcess->processId = pid;
+                        writeLogs_memory(m, getClk(), currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, true);
+                        writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"started",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
+                        currentProcess->processId = pid;
                     }
                     else    
                     {
-                        push(&ReadyQueue, CurrentProcess, 4);
+                        push(&waitingQueue, currentProcess, 4);
                         goto pop_RR;
                     }
                 }
                 else    //it was stopped so resume it
                 {
-                    kill(CurrentProcess->processId, SIGCONT);
+                    kill(currentProcess->processId, SIGCONT);
                     Wasted+=getClk()-LastFinish;
-                    writeLogs_scheduler(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                    writeLogs_scheduler(fptr,getClk(),currentProcess->Id,"resumed",currentProcess->ArrivalTime,currentProcess->RunTime,currentProcess->RemainingTime,currentProcess->WaitingTime);
 
                 }
             }
         }
         //Update remaining time of current process
-        if((getClk() - lastUpdate > 0) && (CurrentProcess != NULL))
+        if((getClk() - lastUpdate > 0) && (currentProcess != NULL))
         {
             int clk = getClk();
             if(startTime == -1)     //if it's the first one
             {
-                currentRuning += (clk - CurrentProcess->ArrivalTime);
+                currentRuning += (clk - currentProcess->ArrivalTime);
                 startTime = 1;
             }
             else
@@ -390,7 +391,7 @@ void RR(int Quantum,FILE *fptr, FILE * m)
                 currentRemaining -= (clk - lastUpdate);
             }
             lastUpdate = clk;
-            if((Processes.head == NULL) && ( currentRuning>= Quantum))      //if there is no processes in the queue take another quantum
+            if((readyQueue.head == NULL) && ( currentRuning>= Quantum))      //if there is no processes in the queue take another quantum
             {
                 currentRuning = 0;
             }
@@ -409,11 +410,11 @@ void RR(int Quantum,FILE *fptr, FILE * m)
             msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
         }
     }
-    waitpid(CurrentProcess->processId, &stat_loc, 0);
+    waitpid(currentProcess->processId, &stat_loc, 0);
     LastFinish=stat_loc>>8;
-    writeLogs_memory(m, LastFinish, CurrentProcess->memory, CurrentProcess->Id, CurrentProcess->Sector->s, CurrentProcess->Sector->e, false);
-    writeLogs_scheduler(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-    free(CurrentProcess);
+    writeLogs_memory(m, LastFinish, currentProcess->memory, currentProcess->Id, currentProcess->Sector->s, currentProcess->Sector->e, false);
+    writeLogs_scheduler(fptr,stat_loc>>8,currentProcess->Id,"finished",currentProcess->ArrivalTime,currentProcess->RunTime,0,currentProcess->WaitingTime);
+    free(currentProcess);
 }
 
 // ==================================================

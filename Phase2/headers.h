@@ -234,6 +234,7 @@ struct process * popReady(Queue * q, int size)
 //                           1 priority queue based on process' priority
 //                           2 priority queue based on process' remaining time
 //                           3 normal queue
+//                           4 priority queue based on process' memory
 //                           other normal queue
 void push(Queue * q, struct process * p, int Algorithm) 
 { 
@@ -255,7 +256,7 @@ void push(Queue * q, struct process * p, int Algorithm)
             } 
             else
             { 
-                while (start->next != NULL && start->next->Priority < p->Priority)
+                while (start->next != NULL && start->next->Priority <= p->Priority)
                 { 
                     start = start->next; 
                 } 
@@ -272,7 +273,7 @@ void push(Queue * q, struct process * p, int Algorithm)
             } 
             else
             { 
-                while (start->next != NULL && start->next->RemainingTime < p->RemainingTime)
+                while (start->next != NULL && start->next->RemainingTime <= p->RemainingTime)
                 { 
                     start = start->next; 
                 } 
@@ -362,7 +363,7 @@ void freeArray(Array *a) {
 // arguments:
 //          - n ==> the integer number desired to get the nerest 2^n
 // return:
-//          - 1 shifted with count =>> as it will return the number from binary 2^n 
+//          - next power of 2
 int nextPowerOf2(unsigned int n) 
 { 
     unsigned count = 0; 
@@ -539,7 +540,10 @@ struct sector * allocate(Memory * m, int size)
 
     int index = (log(real_size) / log(2)) - 3 ;
     if(index < 0)
+    {
         index = 0;
+        real_size = 8;
+    }
     while((index < 6) && (m->head[index]->head == NULL))
         index++;
     if(index == 6)
