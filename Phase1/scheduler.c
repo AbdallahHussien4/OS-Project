@@ -6,10 +6,11 @@ void HPF(FILE *fptr);
 void SRTN(FILE *fptr);
 void RR(int Quantum,FILE *fptr);
 void writeStatus(FILE *fptr,float util, float avgWTA , float avgW);
-void writeLogs(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k);
+void writeLogs(FILE *fptr, int time, int process, char* state, int arrival, int running, int remain, int waiting);
+void clear(int signum);
 
 int Algorithm, rec_val, stat_loc, msgq_id, pid,LastFinish=0, msgq;
-Queue Processes;	
+Queue readyQueue;	
 Array Wt;
 bool finished = false;
 float TWT=0,TTA=0,TWTA=0,Wasted=0,ProcessesNum=0;
@@ -29,6 +30,8 @@ int main(int argc, char * argv[])
     
     signal(SIGUSR1, receiveProcess);
     signal(SIGUSR2, lastProcess);
+    signal(SIGINT, clear);
+
     Algorithm = atoi(argv[1]);
     printf("Algorithm Number is %d\n",Algorithm);
     initClk();
@@ -59,18 +62,26 @@ int main(int argc, char * argv[])
     }
 
 
-    //TODO implement the scheduler :)
-    //upon termination release the clock resources.
     writeStatus(fptr2,(LastFinish-Wasted)*100/LastFinish,TWTA/ProcessesNum , TWT/ProcessesNum);
     freeArray(&Wt);
     fclose(fptr);
     fclose(fptr2);
     destroyClk(false);
+    msgctl(msgq, IPC_RMID, (struct msqid_ds *)0);
 }
 
-// =====================================================================
-// =============== Signal To Receive Processes =========================
-// =====================================================================
+// =============================================================
+// =============== SIGNAL TO CLEAR THE RESOURCES ===============
+// =============================================================
+void clear(int signum)
+{
+    msgctl(msgq, IPC_RMID, (struct msqid_ds *)0);
+    exit(1);
+}
+
+// ===========================================================
+// =============== Signal To Receive Processes ===============
+// ===========================================================
 void receiveProcess(int signum){
     signal(SIGUSR1, receiveProcess);
     struct msgbuffer message;
@@ -80,18 +91,16 @@ void receiveProcess(int signum){
         rec_val = msgrcv(msgq_id, &message, sizeof(message), 0, IPC_NOWAIT);
         if(rec_val!=-1)
         {
-            receivedProcess.Id = message.Id;
-            receivedProcess.ArrivalTime = message.ArrivalTime;
-            receivedProcess.lastTime = message.ArrivalTime;
+            receivedProcess.id = message.id;
+            receivedProcess.arrivalTime = message.arrivalTime;
+            receivedProcess.lastTime = message.arrivalTime;
             receivedProcess.processId = -1;
-            receivedProcess.RunTime = message.RunTime;
-            receivedProcess.Priority = message.Priority;
-            receivedProcess.WaitingTime = 0;
-            receivedProcess.RemainingTime = message.RunTime;
+            receivedProcess.runTime = message.runTime;
+            receivedProcess.priority = message.priority;
+            receivedProcess.waitingTime = 0;
+            receivedProcess.remainingTime = message.runTime;
             receivedProcess.next = NULL;
-            // printf("%d %d %d %d %d %d\n", receivedProcess.Id, receivedProcess.ArrivalTime, receivedProcess.Priority, receivedProcess.RunTime, receivedProcess.RemainingTime, receivedProcess.WaitingTime);
-            push(&Processes, &receivedProcess, Algorithm);
-            //printQueue(&Processes);
+            push(&readyQueue, &receivedProcess, Algorithm);
         }
     } while(rec_val!=-1);
 }
@@ -103,136 +112,120 @@ void lastProcess(int signum){
     finished = true;
 }
 
-// =====================================================================
-// =============== HPF Algorithm ========================================
-// =====================================================================
+// =============================================================================================================================================
+// ==================================================================== HPF ====================================================================
+// =============================================================================================================================================
 
 void HPF(FILE *fptr)
 {
 
-	while(!finished || (Processes.head != NULL))
+	while(!finished || (readyQueue.head != NULL))
     {
-        if(Processes.head != NULL)
+        if(readyQueue.head != NULL)
         {
-            struct process * CurrentProcess = pop(&Processes);
-            CurrentProcess->WaitingTime = getClk() - CurrentProcess->ArrivalTime;
+            struct process * currentProcess = pop(&readyQueue);
+            currentProcess->waitingTime = getClk() - currentProcess->arrivalTime;
             pid = fork();
             
             if(!pid)
             {
-                // fprintf(stderr,"Process with id %d has started at %d\n", CurrentProcess->Id, getClk());
                 char number[6];
-                snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                snprintf(number, sizeof(number), "%d", currentProcess->remainingTime);
                 execl("process.out", "process.out", number, NULL);
             }
-            // if(LastFinish!=0)
             Wasted+=getClk()-LastFinish;
-            writeLogs(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+            writeLogs(fptr,getClk(),currentProcess->id,"started",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
             int last = getClk();
-            while(CurrentProcess->RemainingTime > 0)
+            while(currentProcess->remainingTime > 0)
             {   
                 if(getClk() - last >0)
                 {
                     last = getClk();
-                    message.remainig = --(CurrentProcess->RemainingTime);
+                    message.remainig = --(currentProcess->remainingTime);
                     msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
                 }
             }
             waitpid(pid, &stat_loc, 0);
             LastFinish=stat_loc>>8;
-            writeLogs(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-            free(CurrentProcess);
+            writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
+            free(currentProcess);
 
         }
     }
 }
 
-// =====================================================================
-// =============== SRTN Algorithm ========================================
-// =====================================================================
+// ==============================================================================================================================================
+// ==================================================================== SRTN ====================================================================
+// ==============================================================================================================================================
 
 void SRTN(FILE *fptr)
 {
     int startTime = -1, currentRemaining = -1, lastUpdate = 0;
-    struct process * CurrentProcess;
-    while(!finished || (Processes.head != NULL))
+    struct process * currentProcess;
+    while(!finished || (readyQueue.head != NULL))
     {
-        if(Processes.head != NULL)
+        if(readyQueue.head != NULL)
         {
         	
-            if((startTime == -1) || (currentRemaining > Processes.head->RemainingTime) || (!currentRemaining))
+            if((startTime == -1) || (currentRemaining > readyQueue.head->remainingTime) || (!currentRemaining))
             {
                 if(startTime == -1)
                 {
-                    CurrentProcess = pop(&Processes);
+                    currentProcess = pop(&readyQueue);
                     startTime = getClk();
                     lastUpdate = getClk();
-                    currentRemaining = CurrentProcess->RemainingTime;
+                    currentRemaining = currentProcess->remainingTime;
                 }
                 else if(!currentRemaining){
-                	//// fprintf(stderr,"Hello");
-                    waitpid(CurrentProcess->processId, &stat_loc, 0);
+                    waitpid(currentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
-                    writeLogs(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-                    // fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
-                    //fflush(stdout);
-                    free(CurrentProcess);
-                    CurrentProcess = pop(&Processes);
+                    writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
+                    free(currentProcess);
+                    currentProcess = pop(&readyQueue);
                     
-                    CurrentProcess->WaitingTime += (getClk() - CurrentProcess->lastTime);
+                    currentProcess->waitingTime += (getClk() - currentProcess->lastTime);
       
                 }
                 else
                 {
-                    kill(CurrentProcess->processId, SIGSTOP);
+                    kill(currentProcess->processId, SIGSTOP);
                     LastFinish=getClk();
-                    CurrentProcess->RemainingTime = currentRemaining;
-                    CurrentProcess->lastTime = getClk();
+                    currentProcess->remainingTime = currentRemaining;
+                    currentProcess->lastTime = getClk();
                   
-                    push(&Processes, CurrentProcess, Algorithm);
-                    writeLogs(fptr,getClk(),CurrentProcess->Id,"stopped",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    // fprintf(stderr,"Process with id %d has stopped at %d \n=======\n", CurrentProcess->Id, getClk());
-                    //fflush(stdout);
-                    // new process
-                    CurrentProcess = pop(&Processes);
-                    CurrentProcess->WaitingTime +=(getClk() - CurrentProcess->lastTime);
+                    push(&readyQueue, currentProcess, Algorithm);
+                    writeLogs(fptr,getClk(),currentProcess->id,"stopped",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
+                    currentProcess = pop(&readyQueue);
+                    currentProcess->waitingTime +=(getClk() - currentProcess->lastTime);
                 }
-                if(CurrentProcess->processId == -1)
+                if(currentProcess->processId == -1)
                 {
-                    //// fprintf(stderr,"HELLO\n");
                     pid = fork();
-                    CurrentProcess->processId = pid;
-                    currentRemaining = CurrentProcess->RemainingTime;
-                    // if(LastFinish!=0)
+                    currentProcess->processId = pid;
+                    currentRemaining = currentProcess->remainingTime;
                     Wasted+=getClk()-LastFinish;
-                    writeLogs(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
+                    writeLogs(fptr,getClk(),currentProcess->id,"started",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
                     if(!pid)
                     {
-                        // fprintf(stderr,"Process with id %d has started at %d\n", CurrentProcess->Id, getClk());
-                        //fflush(stdout);
                         char number[6];
-                        snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                        snprintf(number, sizeof(number), "%d", currentProcess->remainingTime);
                         execl("process.out", "process.out", number, NULL);
                     }
-                    fprintf(stderr, "process %d with pid %d has started \n", CurrentProcess->Id, CurrentProcess->processId);
+                    fprintf(stderr, "process %d with pid %d has started \n", currentProcess->id, currentProcess->processId);
                 }else
                 {
                     startTime = getClk();
-                    currentRemaining = CurrentProcess->RemainingTime;
+                    currentRemaining = currentProcess->remainingTime;
                     
-                    kill(CurrentProcess->processId, SIGCONT);
+                    kill(currentProcess->processId, SIGCONT);
                     Wasted+=getClk()-LastFinish;
-                    writeLogs(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    // fprintf(stderr,"Process with id %d has resumed at %d \n=======\n", CurrentProcess->Id, getClk());
-                        //fflush(stdout);
-                    
+                    writeLogs(fptr,getClk(),currentProcess->id,"resumed",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
                 }
                 
             }
         }
-        if(CurrentProcess && (getClk() - lastUpdate > 0))
+        if(currentProcess && (getClk() - lastUpdate > 0))
         {
-            // fprintf(stderr, "CR :%d  LU: %d Clk: %d\n",currentRemaining,lastUpdate,getClk());
             currentRemaining -= (getClk() - lastUpdate);
             lastUpdate = getClk();
             message.remainig = currentRemaining;
@@ -249,83 +242,75 @@ void SRTN(FILE *fptr)
             msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
         }
     }
-    waitpid(CurrentProcess->processId, &stat_loc, 0);
+    waitpid(currentProcess->processId, &stat_loc, 0);
     LastFinish=stat_loc>>8;
-    writeLogs(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-     // fprintf(stderr,"Process with ID: %d, finished at %d and waited for %d\n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
-     //fflush(stdout);
-    free(CurrentProcess);
+    writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
+    free(currentProcess);
 }
 
 
-// =====================================================================
-// =============== RR Algorithm ========================================
-// =====================================================================
+// ============================================================================================================================================
+// ==================================================================== RR ====================================================================
+// ============================================================================================================================================
 
 void RR(int Quantum,FILE *fptr)
 {
     int currentRuning = Quantum + 1, currentRemaining = 1, lastUpdate = 0, startTime = -1;
-    struct process * CurrentProcess = NULL;
-    while(!finished || (Processes.head != NULL))
+    struct process * currentProcess = NULL;
+    while(!finished || (readyQueue.head != NULL))
     {
-        if(Processes.head != NULL)
+        if(readyQueue.head != NULL)
         {
             if(((currentRuning >= Quantum)) || (currentRemaining <= 0))
             {
-                if(CurrentProcess && (currentRemaining > 0))  
+                if(currentProcess && (currentRemaining > 0))  
                 {
-                    kill(CurrentProcess->processId, SIGSTOP);
+                    kill(currentProcess->processId, SIGSTOP);
                     LastFinish=getClk();
-                    // fprintf(stderr,"Process with id %d has stopped at %d \n=======\n", CurrentProcess->Id, getClk());
-                    CurrentProcess->RemainingTime = currentRemaining;
-                    CurrentProcess->lastTime = getClk();
-                    writeLogs(fptr,getClk(),CurrentProcess->Id,"stopped",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    push(&Processes, CurrentProcess, Algorithm);
+                    currentProcess->remainingTime = currentRemaining;
+                    currentProcess->lastTime = getClk();
+                    writeLogs(fptr,getClk(),currentProcess->id,"stopped",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
+                    push(&readyQueue, currentProcess, Algorithm);
                 }
                 if(currentRemaining <= 0)
                 {
-                    waitpid(CurrentProcess->processId, &stat_loc, 0);
+                    waitpid(currentProcess->processId, &stat_loc, 0);
                     LastFinish=stat_loc>>8;
-                    writeLogs(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-                    // fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
-                    free(CurrentProcess);
+                    writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
+                    free(currentProcess);
                 }
-                CurrentProcess = pop(&Processes);
-                currentRemaining = CurrentProcess->RemainingTime;
-                CurrentProcess->WaitingTime += (getClk() - CurrentProcess->lastTime);
+                currentProcess = pop(&readyQueue);
+                currentRemaining = currentProcess->remainingTime;
+                currentProcess->waitingTime += (getClk() - currentProcess->lastTime);
                 currentRuning = 0;
-                if(CurrentProcess->processId == -1)
+                if(currentProcess->processId == -1)
                 {
                     pid = fork();
                     if(pid == 0)
                     {
-                        // fprintf(stderr,"Process with id %d has started at %d\n", CurrentProcess->Id, getClk());
                         char number[6];
-                        snprintf(number, sizeof(number), "%d", CurrentProcess->RemainingTime);
+                        snprintf(number, sizeof(number), "%d", currentProcess->remainingTime);
                         execl("process.out", "process.out", number, NULL);
                     }
-                    // if(LastFinish!=0)
                     Wasted+=getClk()-LastFinish;
-                    writeLogs(fptr,getClk(),CurrentProcess->Id,"started",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    CurrentProcess->processId = pid;
+                    writeLogs(fptr,getClk(),currentProcess->id,"started",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
+                    currentProcess->processId = pid;
                 }
                 else
                 {
-                    kill(CurrentProcess->processId, SIGCONT);
+                    kill(currentProcess->processId, SIGCONT);
                     Wasted+=getClk()-LastFinish;
-                    writeLogs(fptr,getClk(),CurrentProcess->Id,"resumed",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,CurrentProcess->RemainingTime,CurrentProcess->WaitingTime);
-                    // fprintf(stderr,"Process with id %d has resumed at %d \n=======\n", CurrentProcess->Id, getClk());
+                    writeLogs(fptr,getClk(),currentProcess->id,"resumed",currentProcess->arrivalTime,currentProcess->runTime,currentProcess->remainingTime,currentProcess->waitingTime);
 
                 }
             }
         }
-        if((getClk() - lastUpdate > 0) && (CurrentProcess != NULL))
+        if((getClk() - lastUpdate > 0) && (currentProcess != NULL))
         {
             int clk = getClk();
             if(startTime == -1)
             {
-                currentRuning += (clk - CurrentProcess->ArrivalTime);
-                // currentRemaining -= (clk - CurrentProcess->ArrivalTime);
+                currentRuning += (clk - currentProcess->arrivalTime);
                 startTime = 1;
             }
             else
@@ -334,8 +319,7 @@ void RR(int Quantum,FILE *fptr)
                 currentRemaining -= (clk - lastUpdate);
             }
             lastUpdate = clk;
-            // // fprintf(stderr,"**********\nRuning Time: %d,  Remaining: %d, clock: %d\n**********\n", currentRuning, currentRemaining, clk);
-            if((Processes.head == NULL) && ( currentRuning>= Quantum))
+            if((readyQueue.head == NULL) && ( currentRuning>= Quantum))
             {
                 currentRuning = 0;
             }
@@ -353,37 +337,53 @@ void RR(int Quantum,FILE *fptr)
             msgsnd(msgq, &message, sizeof(message.remainig), !IPC_NOWAIT);
         }
     }
-    waitpid(CurrentProcess->processId, &stat_loc, 0);
+    waitpid(currentProcess->processId, &stat_loc, 0);
     LastFinish=stat_loc>>8;
-    writeLogs(fptr,stat_loc>>8,CurrentProcess->Id,"finished",CurrentProcess->ArrivalTime,CurrentProcess->RunTime,0,CurrentProcess->WaitingTime);
-    // fprintf(stderr,"Process with ID: %d finished at %d and waited For %d \n", CurrentProcess->Id, getClk(),CurrentProcess->WaitingTime);
-    free(CurrentProcess);
+    writeLogs(fptr,stat_loc>>8,currentProcess->id,"finished",currentProcess->arrivalTime,currentProcess->runTime,0,currentProcess->waitingTime);
+    free(currentProcess);
 }
 
 // ===================================================
 // =============== Printing Functions ================
 // ===================================================
 
-void writeLogs(FILE *fptr,int time,int process,char* state,int w,int z,int y,int k){
+//  utility function to write the logs into the file 
+//  arguments:
+//          - fptr ==> pointer to the file 
+//          - time ==> current clock
+//          - process ==> process id
+//          - state ==> state of the process (started / finished / resumed / stopped)
+//          - arrival ==> arrival time of the process 
+//          - running ==> total running time of the process
+//          - remain ==> remaining time
+//          - waiting ==> total waiting time
+void writeLogs(FILE *fptr, int time, int process, char* state, int arrival, int running, int remain, int waiting){
     if(state == "finished")
     {
-        float TA = (w == 1)?time:time - w ;
+        float TA = (arrival == 1)?time:time - arrival ;
         float WTA;
-        if(z)
-            WTA = TA/(z);
+        if(running)
+            WTA = TA/(running);
         else
             WTA = TA;
         TTA+=TA;
         TWTA+=WTA;
-        TWT+=k;
+        TWT+=waiting;
         insertArray(&Wt,WTA);
         ProcessesNum+=1;
-        fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d  TA %.2f WTA %.2f \n",time,process,state,w,z,y,k,TA,WTA);
+        fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d  TA %.2f WTA %.2f \n", time, process, state, arrival, running, remain, waiting, TA, WTA);
     }
     else {
-        fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d \n",time,process,state,w,z,y,k);
+        fprintf(fptr,"AT time %d process %d %s arr %d total %d remain %d wait %d \n",time,process,state,arrival,running,remain,waiting);
     }
 }
+
+// utility function to write the performance
+//  arguments:
+//          - fptr ==> pointer to the file 
+//          - util ==> utilization
+//          - avgWTA ==> average weighted turn arround time
+//          - avgW ==> avg waiting time
 void writeStatus(FILE *fptr,float util, float avgWTA , float avgW){
 
 	//Calculate STD
@@ -400,5 +400,4 @@ void writeStatus(FILE *fptr,float util, float avgWTA , float avgW){
     fprintf(fptr,"Avg Waiting = %.2f \n",avgW);
     fprintf(fptr,"Std WTA = %.2f \n",STD);
 }
-
 

@@ -29,27 +29,42 @@ int * shmaddr;                 //
 struct msgbuffer
 {
     int mtype;
-    int ArrivalTime;
-    int RunTime;
-    int Priority;
-    int Id;
+    int arrivalTime;
+    int runTime;
+    int priority;
+    int id;
 };
 
+// used to send the remaining time to the process
 struct remain
 {
     int remainig;
 };
 
+// struct used to keep track of the process information
+//      - processId  ===> after forking the process we save the pid in this variable 
+//                      so we could send signals to the running process
+//      - lastTime  ===> helds the last time the process has started and stopped
+//                     initially has the arrival time of the process 
+//                     used to calculate the waiting time of the process
+//      - arrivalTime  ===> helds the clock at which the procces has arrived
+//      - runTime  ===> helds the total time needed by the process to terminate
+//      - priority  ===> process' priority
+//      - id  ===> id reffers to the id of the process in process.txt 
+//      - waitingTime  ===> helds the total waiting time of the process
+//      - remainingTime  ===> an attribute to check if the process had finished or not
+//                          initially it is equal to the running time 
+//      - next  ===> pointer to the next process in the queue whether in Ready Queue or Waiting Queue
 struct process
 {
     int processId;
     int lastTime;
-    int ArrivalTime;
-    int RunTime;
-    int Priority;
-    int Id;
-    int WaitingTime;
-    int RemainingTime;
+    int arrivalTime;
+    int runTime;
+    int priority;
+    int id;
+    int waitingTime;
+    int remainingTime;
     struct process* next; 
 };
 
@@ -102,22 +117,30 @@ void destroyClk(bool terminateAll)
 // ===============================================
 // =============== Priority Queue ================
 // ===============================================
+
+// struct used to represent the Ready Queue or Waiting Queue
+//      - head  ==> pointer to the first process int the queue
+//                  initially equals to NULL
 struct Queue{
     struct process * head;
-    long size;
 };
-
 typedef struct Queue Queue;
 
+
+// funtion to create a new process to be inserted in the queue
+// arguments:
+//          - p  ==> pointer to a process to get copy of
+// returns: 
+//          - temp  ==> pointer to the copy process
 struct process * newNode(struct process * p) 
 { 
     struct process * temp = (struct process *)malloc(sizeof(struct process)); 
-    temp->ArrivalTime = p->ArrivalTime;
-    temp->RunTime = p->RunTime;
-    temp->Priority = p->Priority;
-    temp->Id = p->Id;
-    temp->WaitingTime = p->WaitingTime;
-    temp->RemainingTime = p->RemainingTime;
+    temp->arrivalTime = p->arrivalTime;
+    temp->runTime = p->runTime;
+    temp->priority = p->priority;
+    temp->id = p->id;
+    temp->waitingTime = p->waitingTime;
+    temp->remainingTime = p->remainingTime;
     temp->lastTime = p->lastTime;
     temp->processId = p->processId;
     temp->next = NULL;
@@ -125,6 +148,7 @@ struct process * newNode(struct process * p)
     return temp; 
 }
 
+// utility function to print the queue
 void printQueue(Queue * q){
     struct process* start = (q->head); 
     if(start == NULL)
@@ -133,14 +157,17 @@ void printQueue(Queue * q){
         return;
     }
     while(start){
-        fprintf(stderr,"ID: %d, R:%d\n", start->Id, start->RemainingTime);
+        fprintf(stderr,"ID: %d, R:%d\n", start->id, start->remainingTime);
         start = start->next;
     }
     printf("========\n");
     return;
 };
 
-
+// arguments: 
+//          - q  ==> Queue to popped from
+// returns:
+//          - temp ==> process pointer to the first process in the queue
 struct process * pop(Queue * q) 
 { 
     struct process * temp = q->head; 
@@ -148,6 +175,14 @@ struct process * pop(Queue * q)
     return temp; 
 } 
 
+// arguments: 
+//          - q  ==> Queue to pushed in
+//          - p  ==> process to be pushed
+//          - Algorithm  ==> integer indicating the type of the queue
+//                           1 priority queue based on process' priority
+//                           2 priority queue based on process' remaining time
+//                           3 normal queue
+//                           other normal queue
 void push(Queue * q, struct process * p, int Algorithm) 
 { 
     struct process* start = (q->head); 
@@ -161,14 +196,14 @@ void push(Queue * q, struct process * p, int Algorithm)
     switch (Algorithm)
     {
         case 1:
-            if ((q->head)->Priority > p->Priority) 
+            if ((q->head)->priority > p->priority) 
             { 
                 temp->next = q->head; 
                 (q->head) = temp; 
             } 
             else
             { 
-                while (start->next != NULL && start->next->Priority < p->Priority)
+                while (start->next != NULL && start->next->priority < p->priority)
                 { 
                     start = start->next; 
                 } 
@@ -178,14 +213,14 @@ void push(Queue * q, struct process * p, int Algorithm)
             }
             break;
         case 2:
-            if ((q->head)->RemainingTime > p->RemainingTime) 
+            if ((q->head)->remainingTime > p->remainingTime) 
             { 
                 temp->next = q->head; 
                 (q->head) = temp; 
             } 
             else
             { 
-                while (start->next != NULL && start->next->RemainingTime < p->RemainingTime)
+                while (start->next != NULL && start->next->remainingTime < p->remainingTime)
                 { 
                     start = start->next; 
                 } 
@@ -214,12 +249,23 @@ typedef struct {
   size_t size;
 } Array;
 
+
+// utility function to initialise the size of the array
+// and force the " used " attribute to be 0
+// arguments:
+//         - a ==> pointer to the array
+//         - initialSize ==> desired size
 void initArray(Array *a, size_t initialSize) {
   a->array = malloc(initialSize * sizeof(float));
   a->used = 0;
   a->size = initialSize;
 }
 
+// utility function to insert an elemenet to the array
+// and check if the array is fulll it doubles the size
+// arguments:
+//         - a ==> pointer to the array
+//         - element ==> element to be inserted
 void insertArray(Array *a, float element) {
   // a->used is the number of used entries, because a->array[a->used++] updates a->used only after the array has been accessed.
   // Therefore a->used can go up to a->size 
@@ -230,6 +276,9 @@ void insertArray(Array *a, float element) {
   a->array[a->used++] = element;
 }
 
+// utility function to free the array
+// arguments:
+//         - a ==> pointer to the array 
 void freeArray(Array *a) {
   free(a->array);
   a->array = NULL;

@@ -1,6 +1,5 @@
 #include "headers.h"
 
-/* Modify this file as needed*/
 int remainingtime, msgq;
 int main(int agrc, char * argv[])
 {
@@ -13,14 +12,13 @@ int main(int agrc, char * argv[])
         fprintf(stderr, "Error Creating the msg queue");
         exit(-1);
     }
+    // loop to receive the remaining time from the scheduler 
+    // break when it is equal to 0
     while(remainingtime > 0)
     {
-        fprintf(stderr, "process remain %d \n", remainingtime);
         msgrcv(msgq, &message, sizeof(message.remainig), 0, !IPC_NOWAIT);
         remainingtime = message.remainig;
-        // fprintf(stderr, "process %d \n", remainingtime);
     }
-    fprintf(stderr, "process with pid %d has finished \n", getpid());
     int clk = getClk();
     destroyClk(false);
     exit(clk);
