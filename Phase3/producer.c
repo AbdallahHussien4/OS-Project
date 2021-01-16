@@ -76,6 +76,7 @@ void handler(int sigNum){
         semctl(empty,0,IPC_RMID,NULL);
         // File -> removal
         remove("init.txt");
+        remove("producerCount.txt");
     }
     // Edit the file for the current num of producers and consumers
     fptr = fopen("counter.txt","w+");
@@ -176,7 +177,6 @@ int main(){
     while(1){
         down(empty);
         down(mutex);
-        // if(numAddr[0]>BUFFER_SIZE) exit(1);
         bufferAddr[addAddr[0]]= input;
         printf("Item is produced: %d\n",bufferAddr[addAddr[0]]);
         input++;

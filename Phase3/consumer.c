@@ -75,6 +75,7 @@ void handler(int sigNum){
         semctl(empty,0,IPC_RMID,NULL);
         // File -> removal
         remove("init.txt");
+        remove("producerCount.txt");
     }
     // Edit the file for the current num of producers and consumers
     fptr = fopen("counter.txt","w+");
